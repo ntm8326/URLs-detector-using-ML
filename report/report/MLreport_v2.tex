@@ -1,0 +1,1498 @@
+% ==============================================================
+%  Phân Loại URL Độc Hại Bằng Phân Tích Lexical Tĩnh
+%  và Cây Quyết Định Gradient Boosted (LightGBM)
+% ==============================================================
+\documentclass[a4paper,12pt]{article}
+
+% ── Packages ──────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[vietnamese]{babel}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{amsmath,amssymb}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, calc, backgrounds}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{multirow}
+\usepackage{fancyhdr}
+\usepackage{tocloft}
+\usepackage{parskip}
+\usepackage{array}
+
+% ── Listing style ─────────────────────────────────────────────
+\lstdefinestyle{pythonstyle}{
+    language=Python,
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{gray},
+    stringstyle=\color{red!70!black},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    numbersep=5pt,
+    frame=single,
+    breaklines=true,
+    showstringspaces=false,
+    tabsize=4,
+    captionpos=b
+}
+\lstset{style=pythonstyle}
+
+% ── Header/Footer ─────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Phân Loại URL Độc Hại --- Phân Tích Lexical Tĩnh}
+\fancyhead[R]{\small \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ── Hyperlink style ───────────────────────────────────────────
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    citecolor=blue!70!black,
+    urlcolor=blue!60!black
+}
+
+% ==============================================================
+\begin{document}
+
+% ── Trang Bìa ────────────────────────────────────────────────
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+
+{\Huge\bfseries Phân Loại URL Độc Hại\\[0.4cm]
+Bằng Phân Tích Lexical Tĩnh và\\[0.4cm]
+LightGBM Gradient Boosting}
+
+\vspace{1.5cm}
+
+{\Large Báo Cáo Kỹ Thuật}
+
+\vspace{2cm}
+
+{\large
+\begin{tabular}{rl}
+\textbf{Dự án:}       & URL Analysis \\
+\textbf{Mô hình:}     & LightGBM (GBDT) \\
+\textbf{Bài toán:}    & Phân loại đa lớp \\
+\textbf{Các lớp:}     & Benign, Defacement, Malware, Phishing \\
+\textbf{Độ chính xác trên tập kiểm thử:} & 93,46\% \\
+\textbf{Ngày:}        & Tháng 6, 2026 \\
+\end{tabular}
+}
+
+\vspace{3cm}
+\vfill
+{\small Phiên bản 2.0}
+\end{titlepage}
+
+% ── Tóm tắt ──────────────────────────────────────────────────
+\begin{abstract}
+Báo cáo này trình bày một hệ thống phân loại URL độc hại toàn diện, dựa hoàn toàn vào phân tích lexical tĩnh (static lexical analysis) trên chuỗi ký tự URL (Uniform Resource Locator). Hệ thống đề xuất trích xuất 63 đặc trưng số được thiết kế thủ công từ văn bản URL thô --- bao gồm các chỉ số cấu trúc, thống kê, lexical và đặc thù mối đe dọa mạng --- mà không cần thực hiện bất kỳ yêu cầu mạng, truy vấn DNS hay truy xuất nội dung trang web nào. Mô hình phân loại LightGBM Gradient Boosted Decision Tree (GBDT) được huấn luyện trên tập dữ liệu gồm 661.976 URL được tổng hợp từ tập dữ liệu Malicious Phish trên Kaggle và nguồn cấp malware URLhaus. Để giảm thiểu rò rỉ dữ liệu ở cấp domain, phương pháp Stratified Group $K$-Fold cross-validation được áp dụng, đảm bảo không có sự trùng lặp domain giữa các tập huấn luyện, kiểm định và kiểm tra. Mô hình đạt được độ chính xác trên tập test là \textbf{93,46\%} trên bốn loại mối đe dọa --- \textit{benign} (lành tính), \textit{defacement} (phá hoại giao diện), \textit{malware} (phần mềm độc hại) và \textit{phishing} (lừa đảo) --- đồng thời duy trì độ trễ suy luận dưới mili-giây cho mỗi URL. Báo cáo này trình bày chi tiết toàn bộ quy trình xử lý, phương pháp kỹ thuật đặc trưng, quy trình huấn luyện mô hình, kiến trúc suy luận, cũng như phân tích hạn chế và đề xuất kiến trúc nâng cấp trong tương lai.
+\end{abstract}
+
+\newpage
+% ── Mục lục ───────────────────────────────────────────────────
+\tableofcontents
+\newpage
+
+% ==============================================================
+\section{Cấu Trúc Của URL}
+\label{sec:url_structure}
+% ==============================================================
+
+\subsection{Tổng quan về URL}
+
+URL (Uniform Resource Locator) là một chuỗi ký tự được sử dụng để định vị tài nguyên trên Internet. Theo tiêu chuẩn RFC~3986~\cite{rfc3986}, một URL hoàn chỉnh có cấu trúc tổng quát như sau:
+
+\begin{center}
+\texttt{scheme://[username:password@]host[:port]/path[?query][\#fragment]}
+\end{center}
+
+\subsection{Các thành phần chi tiết của URL}
+
+Một URL đầy đủ bao gồm các thành phần sau:
+
+\begin{longtable}{>{\raggedright}p{3.5cm}p{4cm}p{5.5cm}}
+\toprule
+\textbf{Thành phần} & \textbf{Mô tả} & \textbf{Ví dụ} \\
+\midrule
+\endhead
+\texttt{scheme} & Giao thức truyền tải dữ liệu. Xác định cách client giao tiếp với server. & \texttt{http}, \texttt{https}, \texttt{ftp}, \texttt{mailto} \\
+\texttt{username} & Tên người dùng để xác thực. Thường xuất hiện trong URL truy cập FTP hoặc các hệ thống yêu cầu đăng nhập. & \texttt{admin}, \texttt{user123} \\
+\texttt{password} & Mật khẩu đi kèm với username. \textbf{Lưu ý:} Việc truyền mật khẩu qua URL là không an toàn và bị khuyến cáo không nên sử dụng. & \texttt{secret\@123} \\
+\texttt{host} & Tên miền hoặc địa chỉ IP của máy chủ. Bao gồm subdomain, domain và suffix (TLD). & \texttt{sub.example.com}, \texttt{192.168.1.1} \\
+\texttt{port} & Cổng mạng mà dịch vụ lắng nghe. Mặc định: 80 (HTTP), 443 (HTTPS), 21 (FTP). & \texttt{8080}, \texttt{3000} \\
+\texttt{subdomain} & Phần phụ nằm trước tên miền chính. Thường dùng để phân chia các dịch vụ con. & \texttt{www}, \texttt{mail}, \texttt{blog} \\
+\texttt{domain} & Tên miền đăng ký chính (registered domain). Là phần cốt lõi xác định danh tính website. & \texttt{google}, \texttt{facebook} \\
+\texttt{suffix (TLD)} & Hậu tố tên miền cấp cao nhất (Top-Level Domain). Có thể là ccTLD, gTLD hoặc kết hợp. & \texttt{.com}, \texttt{.vn}, \texttt{.com.vn}, \texttt{.org} \\
+\texttt{path} & Đường dẫn đến tài nguyên cụ thể trên máy chủ. Phân tách bởi dấu \texttt{/}. & \texttt{/products/item.html} \\
+\texttt{params} & Tham số đường dẫn theo RFC~2396 (ít phổ biến trong URL hiện đại). & \texttt{;type=a} \\
+\texttt{query} & Chuỗi truy vấn chứa các cặp \texttt{key=value}, phân tách bởi \texttt{\&}. Dùng để truyền dữ liệu cho server. & \texttt{?id=123\&lang=vi} \\
+\texttt{fragment} & Định danh phân đoạn, trỏ đến một vị trí cụ thể trong trang. Không được gửi đến server. & \texttt{\#section-2} \\
+\bottomrule
+\caption{Các thành phần đầy đủ của một URL theo RFC~3986.}
+\label{tab:url_full_components}
+\end{longtable}
+
+\subsection{Ví dụ phân tích URL đầy đủ}
+
+Xét URL sau đây --- một URL chứa đầy đủ tất cả các thành phần, bao gồm cả thông tin xác thực (username và password):
+
+\begin{center}
+\fbox{\parbox{0.9\textwidth}{
+\texttt{https://admin:P\@ss123@mail.example.com:8443/inbox/messages?folder=spam\&page=2\#msg-42}
+}}
+\end{center}
+
+\vspace{0.5cm}
+
+Phân tích chi tiết từng thành phần:
+
+\begin{table}[H]
+\centering
+\caption{Phân tích URL mẫu chứa username và password.}
+\label{tab:url_example}
+\begin{tabular}{ll}
+\toprule
+\textbf{Thành phần} & \textbf{Giá trị trích xuất} \\
+\midrule
+Scheme     & \texttt{https} \\
+Username   & \texttt{admin} \\
+Password   & \texttt{P@ss123} \\
+Subdomain  & \texttt{mail} \\
+Domain     & \texttt{example} \\
+Suffix     & \texttt{com} \\
+Netloc     & \texttt{admin:P@ss123@mail.example.com:8443} \\
+Port       & \texttt{8443} \\
+Path       & \texttt{/inbox/messages} \\
+Query      & \texttt{folder=spam\&page=2} \\
+Fragment   & \texttt{msg-42} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Phân tích bảo mật của URL mẫu trên:}
+
+\begin{itemize}
+    \item \textbf{Thông tin xác thực trong URL:} Việc nhúng \texttt{username:password} trực tiếp vào URL là một thực hành bảo mật yếu kém và là nguy cơ nghiêm trọng. Mật khẩu có thể bị lộ qua lịch sử trình duyệt, server logs, hoặc HTTP Referer header. RFC~3986 khuyến cáo mạnh mẽ không nên sử dụng cách này.
+
+    \item \textbf{Kỹ thuật lừa đảo bằng ``@'':} Kẻ tấn công lợi dụng ký tự \texttt{@} trong URL để đánh lừa người dùng. Ví dụ: trong URL \texttt{http://paypal.com@evil.com/login}, trình duyệt thực tế sẽ truy cập \texttt{evil.com} chứ không phải \texttt{paypal.com}. Phần trước \texttt{@} được coi là thông tin xác thực (username), còn phần sau mới là tên miền thực sự.
+
+    \item \textbf{Port không chuẩn:} Port \texttt{8443} thay vì port mặc định \texttt{443} cho HTTPS có thể là dấu hiệu của một dịch vụ không chính thống hoặc một proxy trung gian.
+\end{itemize}
+
+\subsection{Sơ đồ cấu trúc URL}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=0cm,
+    part/.style={
+        rectangle, draw, minimum height=1.2cm,
+        align=center, font=\small\ttfamily
+    },
+    label/.style={font=\tiny\itshape, text=gray, align=center}
+]
+% URL parts
+\node[part, fill=blue!15, minimum width=1.8cm] (scheme) {https};
+\node[right=0cm of scheme, font=\small\ttfamily] (sep1) {://};
+\node[part, fill=red!15, minimum width=2cm, right=0cm of sep1] (user) {admin};
+\node[right=0cm of user, font=\small\ttfamily] (sep2) {:};
+\node[part, fill=red!15, minimum width=2.2cm, right=0cm of sep2] (pass) {P@ss123};
+\node[right=0cm of pass, font=\small\ttfamily] (sep3) {@};
+\node[part, fill=green!15, minimum width=1.2cm, right=0cm of sep3] (sub) {mail};
+\node[right=0cm of sub, font=\small\ttfamily] (sep4) {.};
+\node[part, fill=green!20, minimum width=2.2cm, right=0cm of sep4] (dom) {example};
+\node[right=0cm of dom, font=\small\ttfamily] (sep5) {.};
+\node[part, fill=green!10, minimum width=1.2cm, right=0cm of sep5] (suf) {com};
+
+% Labels
+\node[label, below=0.3cm of scheme] {scheme};
+\node[label, below=0.3cm of user] {username};
+\node[label, below=0.3cm of pass] {password};
+\node[label, below=0.3cm of sub] {subdomain};
+\node[label, below=0.3cm of dom] {domain};
+\node[label, below=0.3cm of suf] {suffix};
+
+% Second line
+\node[right=0cm of suf, font=\small\ttfamily] (sep6) {:};
+\node[part, fill=yellow!20, minimum width=1.2cm, right=0cm of sep6] (port) {8443};
+\node[label, below=0.3cm of port] {port};
+
+\end{tikzpicture}
+
+\vspace{0.5cm}
+
+\begin{tikzpicture}[
+    node distance=0cm,
+    part/.style={
+        rectangle, draw, minimum height=1.2cm,
+        align=center, font=\small\ttfamily
+    },
+    label/.style={font=\tiny\itshape, text=gray, align=center}
+]
+\node[part, fill=orange!15, minimum width=4cm] (path) {/inbox/messages};
+\node[right=0cm of path, font=\small\ttfamily] (sep7) {?};
+\node[part, fill=purple!10, minimum width=5cm, right=0cm of sep7] (query) {folder=spam\&page=2};
+\node[right=0cm of query, font=\small\ttfamily] (sep8) {\#};
+\node[part, fill=cyan!15, minimum width=2cm, right=0cm of sep8] (frag) {msg-42};
+
+\node[label, below=0.3cm of path] {path};
+\node[label, below=0.3cm of query] {query};
+\node[label, below=0.3cm of frag] {fragment};
+\end{tikzpicture}
+
+\caption{Sơ đồ phân tách các thành phần của URL mẫu.}
+\label{fig:url_structure}
+\end{figure}
+
+% ==============================================================
+\section{Điểm Giống Nhau Giữa Các Loại URL}
+\label{sec:similarities}
+% ==============================================================
+
+Mặc dù URL thuộc các loại mối đe dọa khác nhau (benign, defacement, malware, phishing) có những đặc điểm phân biệt riêng, chúng đều chia sẻ một nền tảng cấu trúc chung dựa trên chuẩn RFC~3986~\cite{rfc3986}. Phần này phân tích các điểm tương đồng về cấu trúc giữa các loại URL.
+
+\subsection{Cấu trúc cơ bản chung}
+
+Tất cả các URL --- bất kể mục đích sử dụng --- đều tuân theo cùng một mô hình cấu trúc được định nghĩa bởi RFC~3986. Cụ thể:
+
+\begin{itemize}
+    \item \textbf{Scheme:} Mọi URL hợp lệ đều bắt đầu bằng một giao thức (scheme). Cả URL lành tính và URL độc hại đều sử dụng \texttt{http://} hoặc \texttt{https://} làm scheme phổ biến nhất. Đáng chú ý, URL phishing ngày càng sử dụng \texttt{https} để tạo cảm giác an toàn giả tạo cho nạn nhân.
+
+    \item \textbf{Host (Netloc):} Phần host bao gồm subdomain, domain và suffix. Cả URL lành tính và độc hại đều cần một host hợp lệ để trình duyệt có thể phân giải DNS. Sự khác biệt nằm ở nội dung (ví dụ: domain ngẫu nhiên cho malware, domain giả mạo cho phishing), nhưng cấu trúc vẫn đồng nhất.
+
+    \item \textbf{Path:} Thành phần đường dẫn xuất hiện ở mọi loại URL. URL lành tính sử dụng path để điều hướng đến nội dung, trong khi URL malware có thể dùng path để dẫn đến tệp độc hại (\\texttt{.exe}, \\texttt{.dll}), và URL phishing sử dụng path để mô phỏng trang đăng nhập.
+
+    \item \textbf{Query và Fragment:} Các thành phần truy vấn và phân đoạn có mặt ở cả URL lành tính và độc hại. URL lành tính dùng query để truyền tham số tìm kiếm, URL phishing có thể dùng query để nhúng email nạn nhân, và URL malware có thể dùng query để truyền payload mã hóa.
+\end{itemize}
+
+\subsection{Bảng so sánh điểm giống nhau theo thành phần}
+
+\begin{table}[H]
+\centering
+\caption{Điểm tương đồng về cấu trúc giữa các loại URL.}
+\label{tab:similarities}
+\begin{tabular}{p{2.8cm}p{3cm}p{3cm}p{3cm}}
+\toprule
+\textbf{Thành phần} & \textbf{Benign} & \textbf{Phishing / Defacement} & \textbf{Malware} \\
+\midrule
+Scheme & \texttt{https/http} & \texttt{https/http} & \texttt{http/https/ftp} \\
+Có host & Luôn có & Luôn có & Luôn có \\
+Có domain & Luôn có & Luôn có (giả mạo) & Có (hoặc dùng IP) \\
+Có suffix & Luôn có & Luôn có & Luôn có \\
+Có path & Thường có & Thường có & Thường có \\
+Percent-encoding & Có thể có & Có thể có & Có thể có \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Tại sao sự tương đồng này là một thách thức?}
+
+Sự giống nhau về cấu trúc cơ bản giữa URL lành tính và URL độc hại chính là thách thức cốt lõi mà hệ thống phân loại phải đối mặt. Kẻ tấn công cố tình thiết kế URL độc hại sao cho \textit{giống hệt} URL lành tính ở cấp độ bề mặt (surface-level similarity). Điều này nhấn mạnh sự cần thiết của việc trích xuất các đặc trưng sâu hơn --- chẳng hạn như entropy, tỷ lệ phụ âm, khoảng cách Levenshtein, và sự hiện diện của từ khóa đáng ngờ --- để phân biệt giữa các loại URL.
+
+Chính vì lý do này, hệ thống của chúng tôi sử dụng \textbf{63 đặc trưng số} thuộc 6 nhóm khác nhau, khai thác không chỉ cấu trúc mà còn cả các mẫu thống kê, lexical và các chỉ báo mối đe dọa mạng chuyên biệt.
+
+% ==============================================================
+\section{Tổng Quan Hệ Thống}
+\label{sec:overview}
+% ==============================================================
+
+Hệ thống \textbf{URL Analysis} là một pipeline xử lý đầu-cuối (end-to-end) để phân loại URL thành bốn lớp mối đe dọa độc lập (mutually exclusive), dựa hoàn toàn vào \textit{phân tích lexical tĩnh}. Khác với các phương pháp phân tích động yêu cầu render trang web, thực thi JavaScript, hoặc truy vấn các dịch vụ uy tín bên ngoài, hệ thống đề xuất hoạt động hoàn toàn trên biểu diễn cấp ký tự (character-level) của chuỗi URL. Thiết kế này mang lại nhiều ưu điểm thực tiễn: (i)~không có độ trễ mạng trong quá trình suy luận, (ii)~khả năng chống lại các kỹ thuật né tránh sử dụng nội dung trang thay đổi động, và (iii)~phù hợp triển khai trong môi trường có băng thông hạn chế hoặc cách ly mạng (air-gapped).
+
+Bốn lớp mục tiêu được định nghĩa như sau:
+\begin{enumerate}[label=(\roman*)]
+    \item \textbf{Benign (Lành tính)} --- URL hợp pháp không gây ra mối đe dọa bảo mật.
+    \item \textbf{Defacement (Phá hoại giao diện)} --- URL liên quan đến các cuộc tấn công làm biến đổi giao diện website, trong đó kẻ tấn công thay đổi nội dung hiển thị của trang web bị xâm nhập.
+    \item \textbf{Malware (Phần mềm độc hại)} --- URL đóng vai trò là vector lây nhiễm phần mềm độc hại, bao gồm trojan, ransomware và các lệnh gọi lại command-and-control (C2).
+    \item \textbf{Phishing (Lừa đảo)} --- URL giả mạo các thực thể đáng tin cậy nhằm lấy thông tin xác thực nhạy cảm hoặc thông tin cá nhân của người dùng.
+\end{enumerate}
+
+Pipeline phân loại bao gồm bốn giai đoạn tuần tự: (1)~chuẩn hóa URL, (2)~phân tách URL thành 12 thành phần cấu trúc, (3)~trích xuất 63 đặc trưng số, và (4)~phân loại xác suất bằng mô hình LightGBM GBDT.
+
+% ==============================================================
+\section{Nguồn Dữ Liệu Huấn Luyện}
+\label{sec:data}
+% ==============================================================
+
+\subsection{Tập dữ liệu chính: Kaggle Malicious Phish Corpus}
+
+Tập dữ liệu huấn luyện chính được lấy từ tập dữ liệu \textit{Malicious Phish} công khai trên Kaggle, bao gồm \textbf{653.490} mẫu URL có nhãn. Mỗi bản ghi gồm hai trường: chuỗi URL thô và loại mối đe dọa tương ứng (\texttt{benign}, \texttt{defacement}, \texttt{malware}, hoặc \texttt{phishing}). Tập dữ liệu có sự mất cân bằng lớp ở mức trung bình, với phân phối xấp xỉ: \texttt{benign} (64,6\%), \texttt{phishing} (14,5\%), \texttt{defacement} (14,4\%), và \texttt{malware} (6,4\%).
+
+\subsection{Tập dữ liệu bổ sung: URLhaus Malware Feed}
+
+Để tăng cường đại diện cho lớp \texttt{malware}, thêm \textbf{18.696} URL được tích hợp từ nguồn cấp dữ liệu tình báo mối đe dọa URLhaus do abuse.ch duy trì~\cite{urlhaus}. Các URL này được gán nhãn \texttt{malware} đồng nhất. Để tránh trùng lặp bản ghi, chỉ các URL chưa có trong tập dữ liệu chính mới được thêm vào.
+
+\begin{lstlisting}[caption={Quy trình tổng hợp dữ liệu cho URL bổ sung từ URLhaus}]
+df_urlhaus = pd.read_csv(urlhaus_path, skiprows=8)
+new_urls = ~df_urlhaus['url'].isin(url_data['url'])
+df_new = df_urlhaus[new_urls][['url']].copy()
+df_new['type'] = 'malware'
+df_updated = pd.concat([url_data, df_new], ignore_index=True)
+\end{lstlisting}
+
+Sau khi tổng hợp, tập dữ liệu kết hợp chứa \textbf{672.186} mẫu thô. Sau khi loại bỏ trùng lặp theo chuỗi URL, tập dữ liệu làm việc cuối cùng gồm \textbf{661.976} mẫu duy nhất.
+
+\subsection{Danh sách trắng: Danh mục domain tin cậy}
+
+Một danh sách trắng gồm \textbf{10.001 domain uy tín} được duy trì để hỗ trợ tính toán độ tương đồng Levenshtein (Phần~\ref{sec:levenshtein}). Danh mục này bao gồm các domain nổi bật toàn cầu (ví dụ: \texttt{google.com}, \texttt{facebook.com}, \texttt{microsoft.com}), domain tổ chức và tài chính Việt Nam (ví dụ: \texttt{vietcombank.com.vn}, \texttt{vnexpress.net}), và các thực thể chính phủ hoặc liên chính phủ (ví dụ: \texttt{chinhphu.vn}, \texttt{ieee.org}, \texttt{nih.gov}).
+
+% ==============================================================
+\section{Pipeline Xử Lý}
+\label{sec:pipeline}
+% ==============================================================
+
+Hệ thống hoạt động theo cơ chế \textit{huấn luyện ngoại tuyến (offline), suy luận trực tuyến (online)}. Pipeline huấn luyện biến đổi chuỗi URL thô thành ma trận đặc trưng, huấn luyện bộ phân loại LightGBM và lưu trữ các tệp cấu phần (artifact) của mô hình. Pipeline suy luận tiếp nhận một URL đơn lẻ, trích xuất vector đặc trưng tương tự và trả về xác suất có điều kiện theo lớp. Hình~\ref{fig:pipeline} minh họa cả hai pipeline.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=1.2cm and 2cm,
+    block/.style={
+        rectangle, draw, rounded corners,
+        text width=4.5cm, minimum height=1cm,
+        align=center, fill=blue!8,
+        font=\small
+    },
+    arrow/.style={-{Stealth[length=3mm]}, thick},
+    label/.style={font=\tiny\itshape, text=gray}
+]
+% ── Pipeline Huấn Luyện (trái) ──
+\node[block, fill=green!10] (data) {Tập dữ liệu thô\\(653K + 18K URLs)};
+\node[block, below=of data] (dedup) {Loại bỏ trùng lặp\\theo chuỗi URL};
+\node[block, below=of dedup] (parse) {Phân tách URL\\12 thành phần cấu trúc};
+\node[block, below=of parse] (feat) {Trích xuất đặc trưng\\63 đặc trưng số};
+\node[block, below=of feat] (split) {StratifiedGroupKFold\\Phân chia 80\,/\,10\,/\,10};
+\node[block, below=of split, fill=orange!15] (train) {Huấn luyện LightGBM\\GBDT, 4.000 estimators};
+\node[block, below=of train, fill=red!10] (model) {Lưu trữ tệp cấu phần\\(.txt\enspace .json\enspace .joblib)};
+
+\draw[arrow] (data) -- (dedup);
+\draw[arrow] (dedup) -- (parse);
+\draw[arrow] (parse) -- (feat);
+\draw[arrow] (feat) -- (split);
+\draw[arrow] (split) -- (train);
+\draw[arrow] (train) -- (model);
+
+% ── Pipeline Suy Luận (phải) ──
+\node[block, fill=yellow!10, right=3.5cm of parse] (input) {URL đầu vào\\(chuỗi thô)};
+\node[block, below=of input] (norm) {Chuẩn hóa URL\\thêm scheme nếu thiếu};
+\node[block, below=of norm] (iparse) {Phân tách +\\Trích xuất đặc trưng};
+\node[block, below=of iparse] (reindex) {Sắp xếp cột\\khớp với schema huấn luyện};
+\node[block, below=of reindex, fill=orange!15] (predict) {Suy luận LightGBM\\xác suất có điều kiện};
+\node[block, below=of predict, fill=red!10] (output) {Kết quả phân loại\\benign\enspace / defacement\\/ malware\enspace / phishing};
+
+\draw[arrow] (input) -- (norm);
+\draw[arrow] (norm) -- (iparse);
+\draw[arrow] (iparse) -- (reindex);
+\draw[arrow] (reindex) -- (predict);
+\draw[arrow] (predict) -- (output);
+
+% ── Kết nối ──
+\draw[arrow, dashed, gray] (model.east) -- ++(1,0) |- (predict.east)
+    node[midway, right, label] {tải mô hình};
+
+% ── Nhãn ──
+\node[above=0.2cm of data, font=\bfseries\small, color=blue!70!black] {Pipeline Huấn Luyện};
+\node[above=0.2cm of input, font=\bfseries\small, color=blue!70!black] {Pipeline Suy Luận};
+
+\end{tikzpicture}
+\caption{Kiến trúc tổng quan của pipeline huấn luyện và suy luận.}
+\label{fig:pipeline}
+\end{figure}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Chuẩn hóa URL}
+% ──────────────────────────────────────────────────────────────
+
+URL thô trong thực tế thường bỏ qua thành phần scheme (ví dụ: \texttt{example.com/path} thay vì \texttt{https://example.com/path}). Để đảm bảo phân tích nhất quán, một quy trình chuẩn hóa hai giai đoạn được áp dụng:
+
+\begin{enumerate}
+    \item \textbf{Chuẩn hóa lúc huấn luyện.} Nếu URL không khớp mẫu \verb|^[a-zA-Z][a-zA-Z0-9+\-.]*://| và không bắt đầu bằng \texttt{//}, tiền tố \texttt{//} được thêm vào. Điều này cho phép \texttt{urlparse} xác định chính xác định danh máy chủ (netloc) mà không áp đặt scheme giả tạo.
+    \item \textbf{Chuẩn hóa lúc suy luận.} Đối với URL do người dùng gửi thiếu cả scheme và dấu phân tách đường dẫn (\texttt{/}), tiền tố \texttt{https://} được thêm vào mặc định.
+\end{enumerate}
+
+\begin{lstlisting}[caption={Các hàm chuẩn hóa URL}]
+def normalize_url(url: str) -> str:
+    """Chuẩn hóa lúc huấn luyện."""
+    if re.match(r'^[a-zA-Z][a-zA-Z0-9\+\-\.]*://', url):
+        return url                    # scheme đã có
+    if url.startswith('//'):
+        return url                    # URL tương đối giao thức
+    return '//' + url                 # thêm // cho urlparse
+
+def normalize_input_url(url: str) -> str:
+    """Chuẩn hóa lúc suy luận."""
+    url = url.strip()
+    if not re.match(r'^[a-zA-Z][a-zA-Z0-9+\-.]*://', url) \
+       and '/' not in url:
+        url = 'https://' + url
+    return url
+\end{lstlisting}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Phân Tách URL}
+% ──────────────────────────────────────────────────────────────
+
+Mỗi URL đã chuẩn hóa được phân tách thành 12 thành phần cấu trúc thông qua sự kết hợp của \texttt{urllib.parse.urlparse} (Python) và thư viện \texttt{tldextract}~\cite{tldextract}. Bảng~\ref{tab:url_components} liệt kê các thành phần này.
+
+\begin{table}[H]
+\centering
+\caption{12 thành phần cấu trúc được trích xuất từ mỗi URL.}
+\label{tab:url_components}
+\begin{tabular}{clll}
+\toprule
+\textbf{STT} & \textbf{Thành phần} & \textbf{Parser} & \textbf{Ví dụ} \\
+\midrule
+0  & Scheme     & \texttt{urlparse}   & \texttt{https} \\
+1  & Netloc     & \texttt{urlparse}   & \texttt{user:pass@sub.example.com:8080} \\
+2  & Username   & \texttt{urlparse}   & \texttt{user} \\
+3  & Password   & \texttt{urlparse}   & \texttt{pass} \\
+4  & Port       & \texttt{urlparse}   & \texttt{8080} \\
+5  & Subdomain  & \texttt{tldextract} & \texttt{sub} \\
+6  & Domain     & \texttt{tldextract} & \texttt{example} \\
+7  & Suffix     & \texttt{tldextract} & \texttt{com} \\
+8  & Path       & \texttt{urlparse}   & \texttt{/page/index.html} \\
+9  & Params     & \texttt{urlparse}   & (tham số RFC~2396) \\
+10 & Query      & \texttt{urlparse}   & \texttt{id=123\&lang=en} \\
+11 & Fragment   & \texttt{urlparse}   & \texttt{section-2} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Tất cả các thành phần đã mã hóa phần trăm (ví dụ: \texttt{\%20}, \texttt{\%3D}) được giải mã đệ quy về dạng plaintext thông qua áp dụng lặp \texttt{urllib.parse.unquote\_plus}:
+
+\begin{lstlisting}[caption={Giải mã percent-encoding đệ quy}]
+def fully_decode(data: str) -> str:
+    if not data:
+        return ""
+    current = str(data)
+    while True:
+        decoded = unquote_plus(current)
+        if decoded == current:
+            break
+        current = decoded
+    return current
+\end{lstlisting}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Pipeline Suy Luận}
+% ──────────────────────────────────────────────────────────────
+
+Tại thời điểm suy luận, quy trình sau được thực hiện cho mỗi URL đầu vào:
+
+\begin{enumerate}
+    \item \textbf{Tải tệp cấu phần.} LightGBM Booster đã lưu (\texttt{.txt}), bộ mã hóa nhãn (\texttt{.joblib}), schema metadata (\texttt{.json}), và danh sách trắng được nạp vào bộ nhớ.
+    \item \textbf{Chuẩn hóa.} URL đầu vào được chuẩn hóa như mô tả ở trên.
+    \item \textbf{Trích xuất đặc trưng.} Hàm \texttt{features\_extraction(url, whitelist)} tính toán tất cả 63 đặc trưng.
+    \item \textbf{Hậu xử lý.} Các cột văn bản thô (\texttt{scheme}, \texttt{netloc}, \texttt{path}, \texttt{query}, \texttt{fragment}, \texttt{subdomain}, \texttt{domain}) bị loại bỏ. Đặc trưng \texttt{url\_length} được thêm vào, và scheme được mã hóa one-hot thành năm chỉ số nhị phân (\texttt{is\_https}, \texttt{is\_http}, \texttt{is\_ftp}, \texttt{is\_none}, \texttt{is\_other}).
+    \item \textbf{Sắp xếp cột.} Vector đặc trưng được sắp xếp lại để khớp chính xác thứ tự cột đã dùng khi huấn luyện, được ghi nhận trong tệp metadata.
+    \item \textbf{Dự đoán.} LightGBM Booster trả về vector xác suất $\mathbf{p} \in \mathbb{R}^4$, một giá trị cho mỗi lớp.
+    \item \textbf{Ánh xạ nhãn.} Xác suất được ánh xạ sang tên lớp dễ đọc thông qua bộ mã hóa nhãn đã lưu.
+\end{enumerate}
+
+\begin{lstlisting}[caption={Logic suy luận chính}]
+def predict_url(url, booster, le, feature_columns, whitelist):
+    X_row = url_to_feature_row(url, feature_columns, whitelist)
+    proba = booster.predict(X_row)[0]
+    labels = le if isinstance(le, np.ndarray) else le.classes_
+    result = {label: round(float(p) * 100, 2)
+              for label, p in zip(labels, proba)}
+    return result
+\end{lstlisting}
+
+% ==============================================================
+\section{Kỹ Thuật Đặc Trưng (Feature Engineering)}
+\label{sec:features}
+% ==============================================================
+
+Tổng cộng \textbf{63 đặc trưng số} được trích xuất từ mỗi URL, được tổ chức thành sáu nhóm có chủ đề mạch lạc. Phần này cung cấp đặc tả chi tiết cho mỗi đặc trưng, định nghĩa tính toán, và lý do bảo mật của nó. Giai đoạn kỹ thuật đặc trưng là đóng góp trí tuệ cốt lõi của hệ thống và là yếu tố quyết định chính cho hiệu suất phân loại.
+
+Theo nghiên cứu của tác giả trong~\cite{deeplearning_phishing}, các ký tự đặc biệt như \texttt{-}, \texttt{/}, \texttt{@}, \texttt{.}, \texttt{\%} có tầm ảnh hưởng khác nhau lên các thành phần khác nhau của URL. Cụ thể:
+\begin{itemize}
+    \item Dấu \texttt{-} (gạch ngang) trong subdomain và domain là dấu hiệu mạnh của phishing, vì kẻ tấn công thường tạo domain đa từ giả mạo thương hiệu (ví dụ: \texttt{secure-login-paypal.attacker.com}).
+    \item Dấu \texttt{/} trong path phản ánh độ sâu thư mục --- URL malware thường có path sâu hơn bình thường.
+    \item Dấu \texttt{@} trong netloc cho phép redirect trình duyệt đến host khác, là kỹ thuật lừa đảo phổ biến.
+    \item Dấu \texttt{.} trong path thường tương ứng với phần mở rộng tệp (\\texttt{.exe}, \\texttt{.php}), có thể chỉ ra URL tải xuống độc hại.
+    \item Dấu \texttt{\%} biểu thị percent-encoding, thường được sử dụng để che giấu (obfuscate) payload độc hại.
+\end{itemize}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Nhóm~1: Đặc Trưng Cấu Trúc và Hiện Diện \texorpdfstring{$(n=14)$}{(n=14)}}
+\label{sec:feat_structural}
+% ──────────────────────────────────────────────────────────────
+
+Nhóm này nắm bắt thành phần macro của URL bằng cách mã hóa sự hiện diện hoặc vắng mặt của mỗi thành phần cấu trúc và độ phức tạp tổng thể của URL.
+
+\begin{longtable}{p{4.5cm}p{1.5cm}p{7cm}}
+\toprule
+\textbf{Đặc trưng} & \textbf{Kiểu} & \textbf{Mô tả} \\
+\midrule
+\endhead
+\texttt{url\_length}       & int   & Tổng độ dài ký tự của chuỗi URL thô. URL độc hại --- đặc biệt là những URL nhúng payload mã hóa --- có xu hướng dài bất thường. \\
+\texttt{number\_of\_part}  & int   & Số lượng thành phần URL không rỗng trong \{scheme, netloc, path, query, fragment\}. Giá trị từ 0 đến 5. \\
+\texttt{has\_scheme}       & bin   & Cho biết scheme (ví dụ: \texttt{http}, \texttt{https}, \texttt{ftp}) có được chỉ định rõ ràng hay không. \\
+\texttt{has\_netloc}       & bin   & Cho biết sự hiện diện của thành phần định danh máy chủ (netloc). \\
+\texttt{has\_path}         & bin   & Cho biết sự hiện diện của thành phần path. \\
+\texttt{has\_params}       & bin   & Cho biết sự hiện diện của tham số đường dẫn RFC~2396. \\
+\texttt{has\_query}        & bin   & Cho biết sự hiện diện của chuỗi truy vấn. \\
+\texttt{has\_fragment}     & bin   & Cho biết sự hiện diện của định danh phân đoạn. \\
+\texttt{has\_username}     & bin   & Cho biết URL có nhúng username trong phần authority hay không. Đây là vector phishing được ghi nhận rõ ràng, vì trình duyệt có thể hiển thị thông tin xác thực nhúng như thể chúng là một phần của domain. \\
+\texttt{has\_password}     & bin   & Cho biết sự hiện diện của mật khẩu nhúng trong phần authority. \\
+\texttt{has\_port}         & bin   & Cho biết có chỉ định số cổng rõ ràng hay không. \\
+\texttt{has\_subdomain}    & bin   & Cho biết sự hiện diện của subdomain (trích xuất qua \texttt{tldextract}). \\
+\texttt{has\_domain}       & bin   & Cho biết domain đã đăng ký hợp lệ có hiện diện hay không. \\
+\texttt{has\_suffix}       & bin   & Cho biết sự hiện diện của hậu tố TLD (top-level domain) được nhận diện. \\
+\bottomrule
+\caption{Nhóm~1: Đặc trưng Cấu trúc và Hiện diện.}
+\label{tab:structural}
+\end{longtable}
+
+\textbf{Lý do bảo mật.} URL phishing thường nhúng thông tin xác thực vào netloc để đánh lừa người dùng (ví dụ: \texttt{http://paypal.com@evil.com/login}). URL phân phối malware trong tập huấn luyện hầu hết đều chỉ định scheme rõ ràng, trong khi URL lành tính thu thập từ danh sách domain thường bỏ qua scheme.
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Nhóm~2: Đặc Trưng Độ Dài \texorpdfstring{$(n=6)$}{(n=6)}}
+\label{sec:feat_length}
+% ──────────────────────────────────────────────────────────────
+
+Nhóm này đo độ dài ký tự của các thành phần URL riêng lẻ. Các thành phần dài bất thường có thể chỉ ra payload bị che giấu, cấu trúc thư mục quá sâu, hoặc chuỗi truy vấn phình to.
+
+\begin{longtable}{p{4.5cm}p{1.5cm}p{7cm}}
+\toprule
+\textbf{Đặc trưng} & \textbf{Kiểu} & \textbf{Mô tả} \\
+\midrule
+\endhead
+\texttt{netloc\_length}     & int & Độ dài ký tự của định danh máy chủ (netloc). \\
+\texttt{path\_length}       & int & Độ dài ký tự của thành phần path. \\
+\texttt{query\_length}      & int & Độ dài ký tự của chuỗi truy vấn. \\
+\texttt{fragment\_length}   & int & Độ dài ký tự của định danh phân đoạn. \\
+\texttt{subdomain\_length}  & int & Độ dài ký tự của subdomain. \\
+\texttt{domain\_length}     & int & Độ dài ký tự của domain đã đăng ký. \\
+\bottomrule
+\caption{Nhóm~2: Đặc trưng Độ dài.}
+\label{tab:length}
+\end{longtable}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Nhóm~3: Đặc Trưng Thống Kê và Entropy \texorpdfstring{$(n=6)$}{(n=6)}}
+\label{sec:feat_entropy}
+% ──────────────────────────────────────────────────────────────
+
+Entropy Shannon~\cite{shannon} đo lường mức độ ngẫu nhiên trong một chuỗi ký tự. Các domain được sinh thuật toán (AGD --- Algorithmically Generated Domains) và path được tạo tự động --- thường được sử dụng bởi malware và hạ tầng C2 --- có entropy cao đặc trưng so với các chuỗi do con người tạo.
+
+Entropy Shannon của chuỗi $s$ có độ dài $n$ với tần số ký tự $\{c_1, c_2, \ldots, c_k\}$ được tính như sau:
+
+\begin{equation}
+H(s) = \log_2(n) - \frac{1}{n}\sum_{i=1}^{k} c_i \cdot \log_2(c_i)
+\label{eq:entropy}
+\end{equation}
+
+\begin{longtable}{p{4.5cm}p{1.5cm}p{7cm}}
+\toprule
+\textbf{Đặc trưng} & \textbf{Kiểu} & \textbf{Mô tả} \\
+\midrule
+\endhead
+\texttt{url\_entropy}       & float & Entropy Shannon tính trên toàn bộ chuỗi URL. \\
+\texttt{netloc\_entropy}    & float & Entropy Shannon của định danh máy chủ (netloc). \\
+\texttt{path\_entropy}      & float & Entropy Shannon của thành phần path. \\
+\texttt{query\_entropy}     & float & Entropy Shannon của chuỗi truy vấn. \\
+\texttt{subdomain\_entropy} & float & Entropy Shannon của subdomain. \\
+\texttt{domain\_entropy}    & float & Entropy Shannon của domain đã đăng ký. \\
+\bottomrule
+\caption{Nhóm~3: Đặc trưng Thống kê và Entropy.}
+\label{tab:entropy}
+\end{longtable}
+
+\begin{lstlisting}[caption={Cài đặt Entropy Shannon}]
+def Shannon_entropy(data: str) -> float:
+    if not data:
+        return 0
+    char_count = Counter(data)
+    n = len(data)
+    s = sum(c * log2(c) for c in char_count.values())
+    return log2(n) - s / n
+\end{lstlisting}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Nhóm~4: Đặc Trưng Ký Tự Đặc Biệt \texorpdfstring{$(n=11)$}{(n=11)}}
+\label{sec:feat_special}
+% ──────────────────────────────────────────────────────────────
+
+Nhóm này định lượng sự xuất hiện của các ký tự dấu câu và ký tự không phải chữ và số cụ thể trong các thành phần URL được chỉ định. Một số mẫu ký tự đóng vai trò là tín hiệu phân biệt mạnh: ví dụ, sự hiện diện của ký hiệu \texttt{@} trong netloc là kỹ thuật giả mạo URL phổ biến, và số lượng dấu gạch ngang cao trong subdomain là đặc trưng của domain phishing (ví dụ: \texttt{secure-login-paypal.attacker.com}).
+
+\begin{longtable}{p{5.2cm}p{1.3cm}p{6.5cm}}
+\toprule
+\textbf{Đặc trưng} & \textbf{Kiểu} & \textbf{Mô tả} \\
+\midrule
+\endhead
+\texttt{hyphen\_in\_subdomain} & int & Số ký tự gạch ngang (\texttt{-}) trong subdomain. Các chiến dịch phishing thường xây dựng subdomain đa từ giả mạo thương hiệu tin cậy. \\
+\texttt{hyphen\_in\_domain}    & int & Số ký tự gạch ngang trong domain đã đăng ký. \\
+\texttt{unicode}               & bin & Cho biết domain có chứa ký tự non-ASCII (codepoint $> 127$) hay không. Đây là dấu hiệu của tấn công homograph IDN (Internationalised Domain Name). \\
+\texttt{punycode}              & bin & Cho biết sự hiện diện của tiền tố \texttt{xn--}, báo hiệu tên miền quốc tế hóa mã hóa Punycode. \\
+\texttt{at\_sign\_in\_netloc}  & int & Số ký tự \texttt{@} trong netloc. Ký tự này có thể redirect trình duyệt đến host khác (ví dụ: \texttt{http://trusted.com@evil.com}). \\
+\texttt{slash\_in\_path}       & int & Số dấu gạch chéo (\texttt{/}) trong path, phản ánh độ sâu thư mục. \\
+\texttt{dot\_in\_path}         & int & Số dấu chấm (\texttt{.}) trong path, thường tương ứng với phần mở rộng tệp. \\
+\texttt{strange\_in\_query}    & int & Số ký tự nằm ngoài tập ký tự unreserved và reserved của RFC~3986~\cite{rfc3986}. \\
+\texttt{equal\_in\_query}      & int & Số dấu bằng (\texttt{=}) trong chuỗi truy vấn, xấp xỉ số cặp tham số key-value. \\
+\texttt{ampersand\_in\_query}  & int & Số ký tự dấu \texttt{\&} trong chuỗi truy vấn. \\
+\texttt{number\_subdomain}     & int & Số cấp subdomain, tính bằng số dấu chấm trong subdomain cộng một. \\
+\bottomrule
+\caption{Nhóm~4: Đặc trưng Ký tự Đặc biệt.}
+\label{tab:special_char}
+\end{longtable}
+
+Các ký tự được coi là ``lạ'' được nhận diện bằng biểu thức chính quy khớp bất kỳ ký tự nào không thuộc tập ký tự chuẩn RFC~3986:
+
+\begin{lstlisting}[caption={Mẫu phát hiện ký tự phi chuẩn (phần bù RFC 3986)}]
+STRANGE_CHAR_PATTERN = re.compile(
+    r"[^a-zA-Z0-9\-\._~:/\?#\[\]@!\$&'\(\)\*\+,;=%]"
+)
+\end{lstlisting}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Nhóm~5: Đặc Trưng Lexical và Heuristic \texorpdfstring{$(n=16)$}{(n=16)}}
+\label{sec:feat_lexical}
+% ──────────────────────────────────────────────────────────────
+
+Nhóm này là nhóm đặc trưng phức tạp nhất về mặt phân tích, sử dụng thuật toán so sánh chuỗi, heuristic ngữ âm, và các chỉ báo mối đe dọa dựa trên từ khóa.
+
+\begin{longtable}{p{5.8cm}p{1.2cm}p{6cm}}
+\toprule
+\textbf{Đặc trưng} & \textbf{Kiểu} & \textbf{Mô tả} \\
+\midrule
+\endhead
+\texttt{normalized\_levenshtein\_domain} & float &
+    Độ tương đồng Levenshtein chuẩn hóa giữa domain host và match gần nhất trong danh sách trắng (xem Phần~\ref{sec:levenshtein}). Giá trị cao chỉ ra khả năng giả mạo thương hiệu. \\
+\texttt{normalized\_levenshtein\_subdomain} & float &
+    Tính toán tương tự áp dụng cho thành phần subdomain. \\
+\texttt{random\_domain\_check} & float &
+    Tỷ lệ phụ âm trên tổng chữ cái trong domain. Domain sinh thuật toán (AGD) có mật độ phụ âm cao hơn domain ngôn ngữ tự nhiên. \\
+\texttt{random\_subdomain\_check} & float &
+    Tỷ lệ phụ âm tính cho subdomain. \\
+\texttt{number\_ratio\_domain} & float &
+    Tỷ lệ ký tự số trong chuỗi domain. Domain hợp pháp hiếm khi chứa chủ yếu chữ số. \\
+\texttt{number\_ratio\_subdomain} & float &
+    Tỷ lệ chữ số trong subdomain. \\
+\texttt{repeated\_domain\_check} & float &
+    Tỷ lệ cặp ký tự giống nhau liền kề trên tổng chuyển đổi ký tự trong domain. \\
+\texttt{repeated\_path\_check} & float &
+    Tỷ lệ lặp ký tự liền kề trong path. \\
+\texttt{repeated\_url\_check} & float &
+    Tỷ lệ lặp ký tự liền kề trên toàn bộ URL. \\
+\texttt{longest\_repeated\_chain} & int &
+    Độ dài chuỗi dài nhất liên tục của một ký tự lặp lại trong URL. \\
+\texttt{ip\_domain} & bin &
+    Cho biết thành phần domain có phải là địa chỉ IPv4 hoặc IPv6 hợp lệ thay vì hostname văn bản hay không. Domain dạng IP thường được malware sử dụng để bypass danh sách đen dựa trên domain. \\
+\texttt{suspicious\_key\_domain} & bin &
+    Cho biết domain có chứa từ khóa đáng ngờ nào không (xem Bảng~\ref{tab:keywords}). \\
+\texttt{suspicious\_key\_subdomain} & bin &
+    Sự hiện diện từ khóa đáng ngờ trong subdomain. \\
+\texttt{suspicious\_key\_path} & bin &
+    Sự hiện diện từ khóa đáng ngờ trong path. \\
+\texttt{suspicious\_key\_query} & bin &
+    Sự hiện diện từ khóa đáng ngờ trong chuỗi truy vấn. \\
+\texttt{shortened} & bin &
+    Cho biết URL có sử dụng dịch vụ rút gọn URL phổ biến hay không (ví dụ: \texttt{bit.ly}, \texttt{goo.gl}, \texttt{tinyurl.com}). \\
+\bottomrule
+\caption{Nhóm~5: Đặc trưng Lexical và Heuristic.}
+\label{tab:lexical}
+\end{longtable}
+
+% ── Phần Levenshtein ─────────────────────────────────────────
+\subsubsection{Độ Tương Đồng Levenshtein với Danh Sách Trắng}
+\label{sec:levenshtein}
+
+Độ tương đồng Levenshtein chuẩn hóa là đặc trưng phân biệt mạnh nhất cho phát hiện phishing (typosquatting detection). Đối với mỗi URL đầu vào, domain host $d$ được so sánh với tất cả 10.001 mục trong danh sách trắng domain tin cậy $W$. Thuật toán sử dụng hai chiến lược tối ưu hóa để giảm chi phí tính toán từ $O(|W| \cdot |d|^2)$: (i)~\textit{bộ lọc trước theo độ dài} bỏ qua các mục trong danh sách trắng có chênh lệch độ dài vượt quá ngưỡng động, và (ii)~tham số \texttt{score\_cutoff} của thư viện RapidFuzz~\cite{rapidfuzz}, cho phép kết thúc sớm phép tính khoảng cách.
+
+\begin{algorithm}[H]
+\caption{Độ tương đồng Levenshtein tối ưu với danh sách trắng.}
+\label{alg:levenshtein}
+\begin{algorithmic}[1]
+\Require Chuỗi domain $d$; danh sách trắng $W = \{w_1, w_2, \ldots, w_{|W|}\}$
+\Ensure Điểm tương đồng chuẩn hóa $s^* \in [0, 1]$
+\State $\tau \gets \max\!\bigl(1,\; \lfloor |d|\,/\,7 \rfloor\bigr)$ \Comment{Ngưỡng khoảng cách chỉnh sửa động}
+\State $s^* \gets 0$
+\For{mỗi $w \in W$}
+    \If{$\bigl||d| - |w|\bigr| > \tau$} \textbf{tiếp tục} \Comment{Bộ lọc trước theo độ dài}
+    \EndIf
+    \State $\delta \gets \mathrm{Levenshtein.distance}(d,\, w,\, \mathrm{cutoff}{=}\tau)$
+    \If{$\delta \leq \tau$}
+        \State $s \gets \mathrm{Levenshtein.normalized\_similarity}(d,\, w)$
+        \If{$s > s^*$}
+            \State $s^* \gets s;\quad w^* \gets w$
+        \EndIf
+    \EndIf
+\EndFor
+\State \Return $s^*$
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Lý do của ngưỡng động.} Ngưỡng $\tau = \max(1, \lfloor |d|/7 \rfloor)$ tỷ lệ thuận với độ dài domain: domain ngắn (ví dụ: \texttt{fb.com}) cho phép tối đa một thao tác chỉnh sửa, trong khi domain dài hơn cho phép nhiều hơn tương ứng. Điều này ngăn chặn khớp tương đồng dương tính giả trên chuỗi ngắn.
+
+% ── Từ khóa đáng ngờ ──────────────────────────────────────────
+\subsubsection{Phân loại từ khóa đáng ngờ}
+
+Hệ thống duy trì một bộ từ điển gồm hơn 40 từ khóa được tuyển chọn, tổ chức theo danh mục ngữ nghĩa, thường xuất hiện trong URL phishing và kỹ thuật xã hội.
+
+\begin{table}[H]
+\centering
+\caption{Danh mục từ khóa đáng ngờ và các thuật ngữ đại diện.}
+\label{tab:keywords}
+\begin{tabular}{ll}
+\toprule
+\textbf{Danh mục} & \textbf{Từ khóa đại diện} \\
+\midrule
+Xác thực    & \texttt{login}, \texttt{signin}, \texttt{sign-in}, \texttt{log-in}, \texttt{logout} \\
+Tài khoản   & \texttt{account}, \texttt{myaccount}, \texttt{profile}, \texttt{user} \\
+Bảo mật     & \texttt{secure}, \texttt{verify}, \texttt{validate}, \texttt{confirm} \\
+Tài chính   & \texttt{banking}, \texttt{payment}, \texttt{checkout}, \texttt{billing}, \texttt{wallet} \\
+Khẩn cấp    & \texttt{update}, \texttt{urgent}, \texttt{alert}, \texttt{warning}, \texttt{suspend} \\
+Hỗ trợ      & \texttt{support}, \texttt{helpdesk}, \texttt{recover}, \texttt{reset}, \texttt{password} \\
+Webmail     & \texttt{webmail}, \texttt{outlook}, \texttt{office365}, \texttt{cpanel} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Nhóm~6: Chỉ Báo Mối Đe Dọa Mạng Nâng Cao \texorpdfstring{$(n=10)$}{(n=10)}}
+\label{sec:feat_advanced}
+% ──────────────────────────────────────────────────────────────
+
+Nhóm cuối cùng nhắm vào các vector mối đe dọa cụ thể đã được quan sát thực tế trong các chiến dịch phân phối malware và phishing.
+
+\begin{longtable}{p{4.8cm}p{1.3cm}p{6.9cm}}
+\toprule
+\textbf{Đặc trưng} & \textbf{Kiểu} & \textbf{Mô tả và Mô hình Mối đe dọa} \\
+\midrule
+\endhead
+\texttt{has\_uuid\_path} & bin &
+    Phát hiện sự hiện diện của chuỗi định dạng UUID (mẫu: \texttt{[0-9a-f]\{8\}-[0-9a-f]\{4\}-...-[0-9a-f]\{12\}}) trong path URL. UUID trong path là dấu hiệu đặc trưng của kênh callback server C2 và staging malware tự động. \\
+\texttt{download\_param} & bin &
+    Cho biết path hoặc chuỗi truy vấn có chứa chuỗi con \texttt{download} hoặc \texttt{install} hay không (chỉ áp dụng khi thành phần tương ứng vượt quá 7~ký tự). Đặc trưng này nhắm vào vector tải xuống drive-by. \\
+\texttt{free\_host} & bin &
+    Cho biết domain có thuộc nền tảng hosting miễn phí đã biết hay không (ví dụ: \texttt{vercel.app}, \texttt{netlify.app}, \texttt{github.io}, \texttt{000webhostapp.com}). Kẻ tấn công thường khai thác dịch vụ hosting miễn phí do chi phí bằng không, triển khai nhanh, và sự tin tưởng nhận thức. \\
+\texttt{free\_host\_download} & bin &
+    Kết hợp \texttt{free\_host} và \texttt{download\_param}. Đặc trưng kết hợp này cung cấp tín hiệu cực mạnh cho phân phối malware qua hạ tầng hosting miễn phí. \\
+\texttt{suspicious\_suffix} & bin &
+    Cho biết TLD có thuộc tập 30 TLD được tuyển chọn có liên quan không cân đối đến lạm dụng (ví dụ: \texttt{.tk}, \texttt{.ml}, \texttt{.ga}, \texttt{.cf}, \texttt{.xyz}, \texttt{.top}, \texttt{.click}). \\
+\texttt{is\_https} & bin & Scheme là \texttt{https}. \\
+\texttt{is\_http}  & bin & Scheme là \texttt{http}. \\
+\texttt{is\_ftp}   & bin & Scheme là \texttt{ftp}. \\
+\texttt{is\_none}  & bin & Không có scheme. \\
+\texttt{is\_other} & bin & Scheme không phải \texttt{http/https/ftp} và không rỗng (ví dụ: \texttt{data:}, \texttt{javascript:}). \\
+\bottomrule
+\caption{Nhóm~6: Chỉ báo Mối đe dọa Mạng Nâng cao.}
+\label{tab:advanced}
+\end{longtable}
+
+\textbf{Tập TLD đáng ngờ.} 30 TLD sau được đánh dấu dựa trên dữ liệu tỷ lệ lạm dụng thực tế:
+
+\begin{lstlisting}[caption={Tập top-level domain đáng ngờ}]
+SUSPICIOUS_TLDS = {
+    'tk', 'ml', 'ga', 'cf', 'gq', 'xyz', 'top', 'click',
+    'link', 'win', 'download', 'racing', 'vip', 'club',
+    'online', 'site', 'live', 'fun', 'space', 'pw',
+    'christmas', 'cyou', 'rest', 'icu', 'cfd', 'hair',
+    'makeup', 'monster', 'quest', 'skin',
+}
+\end{lstlisting}
+
+\textbf{Dịch vụ hosting miễn phí.} 15 nền tảng hosting sau được giám sát:
+
+\begin{lstlisting}[caption={Tập domain dịch vụ hosting miễn phí được giám sát}]
+FREE_HOSTING = {
+    'vercel.app', 'netlify.app', 'github.io', 'glitch.me',
+    'replit.dev', 'repl.co', '000webhostapp.com', 'web.app',
+    'firebaseapp.com', 'pages.dev', 'surge.sh', 'onrender.com',
+    'railway.app', 'fly.dev', 'cyclic.app'
+}
+\end{lstlisting}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Tổng Kết Đặc Trưng}
+% ──────────────────────────────────────────────────────────────
+
+\begin{table}[H]
+\centering
+\caption{Tổng kết sáu nhóm đặc trưng.}
+\label{tab:feat_summary}
+\begin{tabular}{clc}
+\toprule
+\textbf{Nhóm} & \textbf{Danh mục} & \textbf{Số lượng} \\
+\midrule
+1 & Cấu trúc \& Hiện diện          & 14 \\
+2 & Độ dài                          & 6 \\
+3 & Thống kê \& Entropy            & 6 \\
+4 & Ký tự Đặc biệt                 & 11 \\
+5 & Lexical \& Heuristic           & 16 \\
+6 & Chỉ báo Mối đe dọa Nâng cao   & 10 \\
+\midrule
+  & \textbf{Tổng cộng}             & \textbf{63} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ==============================================================
+\section{Huấn Luyện Mô Hình}
+\label{sec:training}
+% ==============================================================
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Tiền Xử Lý Dữ Liệu}
+% ──────────────────────────────────────────────────────────────
+
+\subsubsection{Mã hóa nhãn}
+
+Bốn nhãn lớp dạng chuỗi được chuyển đổi thành mã số nguyên qua \texttt{sklearn.preprocessing.LabelEncoder}~\cite{sklearn}:
+
+\begin{table}[H]
+\centering
+\caption{Ánh xạ mã hóa nhãn.}
+\begin{tabular}{cl}
+\toprule
+\textbf{Mã} & \textbf{Lớp} \\
+\midrule
+0 & benign \\
+1 & defacement \\
+2 & malware \\
+3 & phishing \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Xây dựng ma trận đặc trưng}
+
+Ma trận đặc trưng $\mathbf{X} \in \mathbb{R}^{N \times 63}$ được xây dựng bằng cách chỉ giữ lại 63 đặc trưng số và loại bỏ tất cả cột văn bản thô:
+
+\begin{lstlisting}[caption={Xây dựng ma trận đặc trưng}]
+RAW_TEXT_COLUMNS = {"url", "type", "scheme", "netloc", "path",
+                    "query", "fragment", "subdomain", "domain"}
+X = df.drop(columns=RAW_TEXT_COLUMNS)
+y = df['type']
+\end{lstlisting}
+
+\subsubsection{Loại bỏ trùng lặp}
+
+Trước khi phân chia, tất cả URL trùng lặp hoàn toàn được loại bỏ để ngăn rò rỉ thông tin qua các mẫu sao chép:
+
+\begin{lstlisting}[caption={Loại bỏ trùng lặp}]
+url_data = url_data.drop_duplicates(subset='url').reset_index(drop=True)
+\end{lstlisting}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Phân Chia Dữ Liệu bằng Stratified Group $K$-Fold}
+\label{sec:split}
+% ──────────────────────────────────────────────────────────────
+
+Phân chia ngẫu nhiên đơn giản (ví dụ: \texttt{train\_test\_split}) gây ra một dạng rò rỉ dữ liệu tinh vi nhưng đáng kể: các URL chia sẻ cùng domain đã đăng ký (ví dụ: \texttt{example.com/page1} và \texttt{example.com/page2}) có thể được phân bố vào cả tập huấn luyện và tập test. Mô hình khi đó có thể khai thác việc ghi nhớ ở cấp domain thay vì học các mẫu tổng quát ở cấp URL, dẫn đến các chỉ số đánh giá bị thổi phồng không phản ánh hiệu suất ngoài phân phối thực sự.
+
+Để giải quyết vấn đề này, chúng tôi sử dụng \texttt{sklearn.model\_selection.StratifiedGroupKFold}~\cite{sklearn} với $K{=}10$ fold, sử dụng domain đã đăng ký làm biến nhóm:
+
+\begin{lstlisting}[caption={Phân chia Stratified Group $K$-Fold}]
+from sklearn.model_selection import StratifiedGroupKFold
+
+sgkf = StratifiedGroupKFold(n_splits=10, shuffle=True,
+                             random_state=36)
+folds = list(sgkf.split(X, y, groups=url_data['domain']))
+
+test_idx  = folds[0][1]                                 # ~10%
+val_idx   = folds[1][1]                                  # ~10%
+train_idx = np.concatenate([folds[i][1] for i in range(2, 10)])  # ~80%
+\end{lstlisting}
+
+Chiến lược phân chia này đảm bảo các bất biến sau:
+\begin{itemize}
+    \item \textbf{Phân tầng (Stratification).} Phân phối lớp trong mỗi fold gần tỷ lệ thuận với phân phối tổng thể của tập dữ liệu.
+    \item \textbf{Tính toàn vẹn nhóm (Group integrity).} Tất cả URL thuộc cùng domain đã đăng ký được giới hạn trong một fold duy nhất, \textbf{đảm bảo không có sự trùng lặp tên miền (domain overlap)} giữa các tập huấn luyện, kiểm định và kiểm tra.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Thống kê phân chia dữ liệu.}
+\label{tab:split}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Phân vùng} & \textbf{Số mẫu} & \textbf{Tỷ lệ} \\
+\midrule
+Huấn luyện  & 529.580 & 80\% \\
+Kiểm định   &  66.198 & 10\% \\
+Kiểm tra    &  66.198 & 10\% \\
+\midrule
+\textbf{Tổng} & \textbf{661.976} & \textbf{100\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Cấu Hình Siêu Tham Số LightGBM}
+\label{sec:hyperparams}
+% ──────────────────────────────────────────────────────────────
+
+Bộ phân loại được triển khai sử dụng framework LightGBM~\cite{lightgbm} với thuật toán Cây Quyết Định Gradient Boosted (GBDT). Bảng~\ref{tab:hyperparams} trình bày đặc tả siêu tham số đầy đủ.
+
+\begin{table}[H]
+\centering
+\caption{Cấu hình siêu tham số LightGBM.}
+\label{tab:hyperparams}
+\begin{tabular}{llp{6.2cm}}
+\toprule
+\textbf{Tham số} & \textbf{Giá trị} & \textbf{Lý do} \\
+\midrule
+\multicolumn{3}{l}{\textit{Mục tiêu và Bài toán}} \\
+\texttt{objective}       & \texttt{multiclass}  & Hàm mất mát softmax cross-entropy đa lớp. \\
+\texttt{num\_class}      & 4           & Bốn lớp mục tiêu. \\
+\texttt{boosting\_type}  & \texttt{gbdt}        & Cây Quyết Định Gradient Boosted. \\
+\texttt{class\_weight}   & \texttt{balanced}    & Tỷ lệ nghịch với tần suất lớp. \\
+\midrule
+\multicolumn{3}{l}{\textit{Kiểm soát Dung lượng}} \\
+\texttt{n\_estimators}       & 4.000 & Số vòng boosting tối đa. \\
+\texttt{learning\_rate}      & 0,025  & Bước nhảy bảo thủ để tăng khả năng tổng quát hóa. \\
+\texttt{max\_depth}          & 5       & Độ sâu cây tối đa. \\
+\texttt{num\_leaves}         & 24      & Số lá tối đa mỗi cây ($< 2^5 = 32$). \\
+\texttt{min\_data\_in\_leaf} & 50      & Số mẫu tối thiểu mỗi nút lá. \\
+\midrule
+\multicolumn{3}{l}{\textit{Lấy mẫu Ngẫu nhiên}} \\
+\texttt{colsample\_bytree} & 0,75 & Tỷ lệ lấy mẫu đặc trưng mỗi cây. \\
+\texttt{subsample}         & 0,80 & Tỷ lệ lấy mẫu hàng mỗi vòng boosting. \\
+\texttt{subsample\_freq}   & 1    & Lấy mẫu áp dụng ở mọi lần lặp. \\
+\midrule
+\multicolumn{3}{l}{\textit{Chính quy hóa (Regularisation)}} \\
+\texttt{reg\_alpha}           & 0,1  & Hệ số chính quy hóa $\ell_1$ (Lasso). \\
+\texttt{reg\_lambda}          & 1,0  & Hệ số chính quy hóa $\ell_2$ (Ridge). \\
+\texttt{min\_gain\_to\_split} & 0,01 & Mức tăng thông tin tối thiểu để thực hiện phân nhánh. \\
+\midrule
+\multicolumn{3}{l}{\textit{Dừng sớm (Early Stopping)}} \\
+\texttt{early\_stopping\_rounds} & 100 & Huấn luyện dừng nếu loss kiểm định không cải thiện trong 100 vòng liên tiếp. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Quy Trình Huấn Luyện}
+\label{sec:train_procedure}
+% ──────────────────────────────────────────────────────────────
+
+Mô hình được huấn luyện sử dụng interface tương thích scikit-learn \texttt{LGBMClassifier}. Hai chỉ số đánh giá được giám sát đồng thời: \texttt{multi\_logloss} chính (cross-entropy đa lớp) và \texttt{auc\_mu} phụ (diện tích dưới đường cong ROC đa lớp). Tiến trình huấn luyện được ghi nhận mỗi 100 lần lặp.
+
+\begin{lstlisting}[caption={Quy trình huấn luyện LightGBM}]
+model = lgb.LGBMClassifier(**params)
+
+callbacks = [
+    lgb.early_stopping(stopping_rounds=100, verbose=True),
+    lgb.log_evaluation(100)
+]
+
+model.fit(
+    X_train, y_train,
+    eval_set=[(X_train, y_train), (X_val, y_val)],
+    eval_names=['train', 'val'],
+    callbacks=callbacks,
+    eval_metric=['multi_logloss', 'auc_mu']
+)
+\end{lstlisting}
+
+\textbf{Kết quả huấn luyện.} Early stopping được kích hoạt tại \textbf{lần lặp thứ 738} trong tối đa 4.000 vòng, cho thấy mô hình đạt hội tụ tốt trong phạm vi dung lượng được phân bổ. Việc kết thúc sớm --- ở 18,5\% số vòng lặp tối đa --- cho thấy sự kết hợp của learning rate bảo thủ ($\eta = 0,025$) và 4.000 estimators cung cấp đủ dung lượng cho bài toán phân loại này.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{figures/learning_curve.png}
+\caption{Đường cong học tập (Learning Curve) qua các lần lặp.}
+\label{fig:learning_curve}
+\end{figure}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Kết Quả Đánh Giá}
+\label{sec:results}
+% ──────────────────────────────────────────────────────────────
+
+Mô hình đã huấn luyện được đánh giá trên tập test giữ lại (66.198 mẫu), \textbf{đảm bảo không có sự trùng lặp tên miền (domain overlap)} với tập huấn luyện.
+
+\subsubsection{Các chỉ số đánh giá (Evaluation Metrics)}
+
+Độ chính xác (Accuracy) đạt được trên tập test là \textbf{93,46\%}. Bảng~\ref{tab:classification_report} thể hiện chi tiết các chỉ số Precision, Recall và $F_1$-score cho từng lớp:
+
+\begin{table}[H]
+\centering
+\caption{Báo cáo phân loại chi tiết (Classification Report) trên tập test.}
+\label{tab:classification_report}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Lớp} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} \\
+\midrule
+benign & 0,97 & 0,95 & 0,96 \\
+defacement & 0,91 & 0,98 & 0,94 \\
+malware & 0,93 & 0,91 & 0,92 \\
+phishing & 0,79 & 0,83 & 0,81 \\
+\midrule
+\textbf{Macro avg} & 0,90 & 0,92 & 0,91 \\
+\textbf{Weighted avg} & 0,94 & 0,93 & 0,93 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Qua phân tích, mô hình nhận diện lớp \texttt{benign} và \texttt{defacement} rất tốt với F1-score trên 0,94. Tuy nhiên, lớp \texttt{phishing} có độ chính xác và recall thấp hơn (F1-score 0,81), chủ yếu do URL phishing thường bắt chước cấu trúc của URL lành tính rất tinh vi.
+
+\subsubsection{Chẩn đoán trực quan (Visual Diagnostics)}
+
+Ngoài các chỉ số phân loại, hệ thống cũng sử dụng ma trận nhầm lẫn (Confusion Matrix) để phân tích chi tiết sự nhầm lẫn giữa các lớp. Lớp \texttt{phishing} đôi khi bị nhận diện nhầm thành \texttt{benign} do thiếu các đặc trưng tĩnh đủ mạnh trong một số trường hợp.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{figures/Confusion_Matrix.png}
+\caption{Ma trận nhầm lẫn (Confusion Matrix) trên tập test.}
+\label{fig:confusion_matrix}
+\end{figure}
+
+Giá trị SHAP (SHapley Additive exPlanations)~\cite{shap} và mức tăng thông tin (information gain) cũng được sử dụng để giải thích cách mô hình đưa ra quyết định, qua đó xác định các đặc trưng quan trọng nhất bao gồm tổng chiều dài URL (\texttt{url\_length}), chiều dài các thành phần (\texttt{netloc\_length}, \texttt{path\_length}), và sự xuất hiện của các ký tự đặc biệt.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/FeatureImportanceForBigModel.png}
+\caption{Tầm quan trọng của các đặc trưng (Feature Importance - Gain).}
+\label{fig:feature_importance}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{figures/Feature_importance_tobenign.png}
+    \caption{Lớp Benign}
+\end{subfigure}\hfill
+\begin{subfigure}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{figures/Feature_importance_todefacement.png}
+    \caption{Lớp Defacement}
+\end{subfigure}
+\vskip\baselineskip
+\begin{subfigure}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{figures/Feature_importance_tomalware.png}
+    \caption{Lớp Malware}
+\end{subfigure}\hfill
+\begin{subfigure}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{figures/Feature_importance_tophishing.png}
+    \caption{Lớp Phishing}
+\end{subfigure}
+\caption{Giá trị SHAP phân tích độ quan trọng của đặc trưng đối với từng lớp.}
+\label{fig:shap_values}
+\end{figure}
+
+% ==============================================================
+\section{Kiến Trúc Mô Hình}
+\label{sec:architecture}
+% ==============================================================
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Cây Quyết Định Gradient Boosted}
+% ──────────────────────────────────────────────────────────────
+
+LightGBM~\cite{lightgbm} triển khai một biến thể được tối ưu hóa cao của Cây Quyết Định Gradient Boosted (GBDT), được đề xuất ban đầu bởi Friedman~(2001)~\cite{friedman}. Dự đoán tổng hợp cho mẫu $\mathbf{x}_i$ được cho bởi:
+
+\begin{equation}
+\hat{y}_i = \sum_{t=1}^{T} \eta \cdot f_t(\mathbf{x}_i)
+\label{eq:gbdt}
+\end{equation}
+
+\noindent trong đó $T$ biểu thị số vòng boosting ($T = 738$ sau early stopping), $f_t$ là cây hồi quy thứ $t$, và $\eta = 0,025$ là learning rate (tham số co hẹp).
+
+Các cải tiến thuật toán chính trong LightGBM góp phần vào hiệu quả tính toán bao gồm \textit{Gradient-based One-Side Sampling} (GOSS), giữ lại các mẫu có gradient lớn đồng thời lấy mẫu ngẫu nhiên các mẫu có gradient nhỏ, và \textit{Exclusive Feature Bundling} (EFB), gộp các đặc trưng loại trừ lẫn nhau để giảm chiều đặc trưng hiệu quả.
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Hàm Mục Tiêu}
+% ──────────────────────────────────────────────────────────────
+
+Đối với bài toán phân loại bốn lớp, hàm mục tiêu là hàm mất mát softmax cross-entropy:
+
+\begin{equation}
+\mathcal{L} = -\frac{1}{N}\sum_{i=1}^{N}\sum_{c=1}^{C} y_{i,c} \cdot \log\bigl(p_{i,c}\bigr)
+\label{eq:loss}
+\end{equation}
+
+\noindent trong đó $C = 4$ là số lớp, $y_{i,c} \in \{0, 1\}$ là chỉ thị ground-truth, và xác suất có điều kiện theo lớp được tính qua hàm softmax:
+
+\begin{equation}
+p_{i,c} = \frac{\exp(z_{i,c})}{\sum_{j=1}^{C} \exp(z_{i,j})}
+\label{eq:softmax}
+\end{equation}
+
+\noindent với $z_{i,c}$ biểu thị đầu ra logit thô cho mẫu $i$ và lớp $c$.
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Cân Bằng Lớp}
+% ──────────────────────────────────────────────────────────────
+
+Tham số \texttt{class\_weight='balanced'} tự động điều chỉnh trọng số mẫu cho mỗi lớp theo:
+
+\begin{equation}
+w_c = \frac{N}{C \cdot N_c}
+\label{eq:balance}
+\end{equation}
+
+\noindent trong đó $N$ là tổng số mẫu huấn luyện và $N_c$ là số mẫu thuộc lớp $c$. Sơ đồ trọng số tỷ lệ nghịch này ngăn mô hình phát triển thiên lệch có hệ thống về phía lớp đa số.
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Chiến Lược Chính Quy Hóa Đa Tầng}
+% ──────────────────────────────────────────────────────────────
+
+Để giảm thiểu overfitting, hệ thống sử dụng chiến lược chính quy hóa sáu tầng:
+
+\begin{enumerate}
+    \item \textbf{Ràng buộc cấu trúc:} $\texttt{max\_depth} = 5$ và $\texttt{num\_leaves} = 24$ giới hạn dung lượng biểu diễn của từng cây.
+    \item \textbf{Dân số lá tối thiểu:} $\texttt{min\_data\_in\_leaf} = 50$ ngăn tạo ra các nút lá quá chuyên biệt.
+    \item \textbf{Lấy mẫu đặc trưng:} $\texttt{colsample\_bytree} = 0,75$ tạo tính ngẫu nhiên bằng cách chọn tập con ngẫu nhiên đặc trưng cho mỗi cây.
+    \item \textbf{Lấy mẫu hàng:} $\texttt{subsample} = 0,80$ tạo thêm tính ngẫu nhiên qua chọn mẫu kiểu bagging ở mỗi lần lặp.
+    \item \textbf{Chính quy hóa tường minh:} Phạt $\ell_1$ ($\alpha = 0,1$) và $\ell_2$ ($\lambda = 1,0$) trên trọng số lá.
+    \item \textbf{Mức tăng phân nhánh tối thiểu:} $\texttt{min\_gain\_to\_split} = 0,01$ triệt tiêu các phân nhánh cho lợi ích thông tin không đáng kể.
+\end{enumerate}
+
+% ==============================================================
+\section{Lưu Trữ Mô Hình và Artifacts}
+\label{sec:artifacts}
+% ==============================================================
+
+Sau khi hoàn thành huấn luyện, mô hình và metadata liên quan được tuần tự hóa thành bốn tệp, cho phép suy luận có thể tái tạo mà không cần huấn luyện lại:
+
+\begin{table}[H]
+\centering
+\caption{Các tệp cấu phần của mô hình được lưu trữ.}
+\label{tab:artifacts}
+\begin{tabular}{llp{6cm}}
+\toprule
+\textbf{Tệp} & \textbf{Định dạng} & \textbf{Nội dung} \\
+\midrule
+\texttt{lgb\_url\_classifier.txt} & LightGBM text & Tập hợp cây đã tuần tự hóa; có thể nạp qua \texttt{lgb.Booster(model\_file=...)}. \\
+\texttt{lgb\_url\_classifier.pkl} & Pickle & Đối tượng mô hình đầy đủ tương thích scikit-learn. \\
+\texttt{lgb\_url\_classifier\_metadata.json} & JSON & Siêu tham số, tên đặc trưng có thứ tự, nhãn lớp, độ chính xác test và timestamp huấn luyện. \\
+\texttt{label\_encoder.joblib} & Joblib & Mảng NumPy tên lớp để ánh xạ số nguyên sang nhãn. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Tệp metadata đặc biệt quan trọng cho tính chính xác của suy luận, vì nó mã hóa thứ tự cột chính xác mà mô hình mong đợi. Bất kỳ hoán vị nào của vector đặc trưng đều sẽ tạo ra dự đoán sai.
+
+% ==============================================================
+\section{Kết Luận}
+\label{sec:conclusion}
+% ==============================================================
+
+Báo cáo này đã trình bày một hệ thống phân loại URL độc hại hoàn chỉnh đạt hiệu suất thực nghiệm mạnh mẽ thông qua sự kết hợp giữa kỹ thuật đặc trưng có nguyên tắc và phân loại bằng cây gradient boosted. Các đóng góp và phát hiện chính được tóm tắt như sau:
+
+\begin{itemize}
+    \item Độ chính xác test \textbf{93,46\%} đạt được trên tập test giữ lại, \textbf{đảm bảo không có sự trùng lặp tên miền} với tập huấn luyện, phản ánh khách quan và sát thực tế nhất khả năng tổng quát hóa của mô hình.
+    \item Framework kỹ thuật đặc trưng toàn diện gồm \textbf{63 đặc trưng thủ công} thuộc sáu nhóm chủ đề --- bao gồm cấu trúc, thống kê, lexical và đặc thù mối đe dọa --- cho phép phân loại hiệu quả mà không cần bất kỳ tín hiệu cấp mạng hay nội dung nào.
+    \item Việc áp dụng \textbf{Stratified Group $K$-Fold} loại bỏ rò rỉ dữ liệu cấp domain, một yếu tố nhiễu phổ biến nhưng thường bị bỏ qua trong các benchmark phân loại URL.
+    \item Bộ phân loại \textbf{LightGBM GBDT}, được trang bị chiến lược chính quy hóa sáu tầng, hội tụ tại lần lặp thứ 738 trên 4.000 vòng, thể hiện việc sử dụng hiệu quả dung lượng mô hình.
+    \item Pipeline suy luận hoạt động hoàn toàn trên chuỗi URL với \textbf{độ trễ dưới mili-giây}, phù hợp triển khai thời gian thực trong các thiết bị an ninh mạng và tiện ích mở rộng trình duyệt.
+\end{itemize}
+
+% ==============================================================
+\section{Hạn Chế và Hướng Phát Triển Tương Lai}
+\label{sec:limitations}
+% ==============================================================
+
+\subsection{Hạn chế đã biết}
+
+\subsubsection{Phụ thuộc hoàn toàn vào mô hình ML}
+
+Kiến trúc hiện tại dựa hoàn toàn vào mô hình Machine Learning để dự đoán URL. Mặc dù mô hình đạt độ chính xác hơn 93\%, nó phụ thuộc hoàn toàn vào dữ liệu đưa vào để huấn luyện. Hệ quả là, khi thử nghiệm với những URL đơn giản chỉ bao gồm \texttt{domain + suffix} (ví dụ: \texttt{google.com}), mô hình có thể trả về kết quả sai --- cụ thể là phân loại chúng là \texttt{phishing}. Nguyên nhân là vì các URL quá ngắn không cung cấp đủ tín hiệu đặc trưng cho mô hình, và pattern của chúng (thiếu scheme, path ngắn) có thể trùng khớp với một số mẫu phishing trong tập huấn luyện.
+
+\subsubsection{Tập trung vào phân tích URL tĩnh}
+
+Hệ thống hiện tại chủ yếu tập trung vào phân tích tĩnh chuỗi URL, bỏ qua các thông tin động quan trọng như:
+\begin{itemize}
+    \item Nội dung trang web (HTML, JavaScript, hình ảnh)
+    \item Ngày đăng ký và tuổi của domain
+    \item Thông tin chứng chỉ SSL/TLS
+    \item Lịch sử DNS và các thay đổi bản ghi
+    \item Dữ liệu WHOIS (chủ sở hữu, quốc gia đăng ký)
+\end{itemize}
+
+\subsubsection{Tham số chưa được tối ưu hệ thống}
+
+Các siêu tham số hiện tại của LightGBM được chọn dựa trên kinh nghiệm và thực nghiệm thủ công, chưa trải qua quy trình tối ưu hóa hệ thống (ví dụ: Bayesian Optimization qua Optuna).
+
+\subsubsection{Dataset tĩnh}
+
+Tập dữ liệu huấn luyện là cố định --- không có cơ chế tự động cập nhật. Trong thực tế, URL độc hại liên tục thay đổi và tiến hóa, dẫn đến sự suy giảm hiệu suất theo thời gian (concept drift).
+
+\subsection{Kiến trúc nâng cấp đề xuất}
+\label{sec:proposed_arch}
+
+Để khắc phục hạn chế chính --- sự phụ thuộc hoàn toàn vào mô hình ML --- kiến trúc mới đề xuất sẽ bổ sung các lớp lọc phía trước mô hình ML, tạo thành pipeline \textbf{5 lớp} (5-layer) với trình tự như sau:
+
+\begin{enumerate}
+    \item \textbf{Lớp 1 --- Chuẩn hóa và Giải mã hóa (Normalization \& De-obfuscation):}
+    \begin{itemize}
+        \item Chuẩn hóa scheme, loại bỏ khoảng trắng thừa
+        \item Giải mã đệ quy percent-encoding (\texttt{\%xx})
+        \item Phát hiện và giải mã các kỹ thuật obfuscation phổ biến (double-encoding, unicode normalization, punycode)
+        \item Chuẩn hóa IP address (decimal, octal, hex)
+    \end{itemize}
+
+    \item \textbf{Lớp 2 --- Mở rút gọn và Phân giải (Unshorten \& Resolve):}
+    \begin{itemize}
+        \item Phát hiện URL rút gọn (\texttt{bit.ly}, \texttt{tinyurl.com}, v.v.) và mở rút gọn (follow redirect) để lấy URL đích thực
+        \item Phân giải chuỗi redirect để tìm URL cuối cùng
+        \item Giới hạn số lượng redirect để tránh vòng lặp vô hạn
+    \end{itemize}
+
+    \item \textbf{Lớp 3 --- Khớp chính xác Danh sách trắng (Strict Exact-Match Whitelist):}
+    \begin{itemize}
+        \item So khớp chính xác domain đã trích xuất với danh sách trắng 10.001 domain tin cậy
+        \item Nếu domain khớp chính xác $\rightarrow$ trả về \texttt{benign} ngay lập tức, bỏ qua các lớp sau
+        \item Giải quyết trực tiếp vấn đề ``domain ngắn'' (ví dụ: \texttt{google.com}) mà kiến trúc hiện tại xử lý sai
+    \end{itemize}
+
+    \item \textbf{Lớp 4 --- Kỹ thuật đặc trưng và Phát hiện Typosquatting (Feature Engineering \& Typosquatting Detection):}
+    \begin{itemize}
+        \item Trích xuất 63 đặc trưng như hệ thống hiện tại
+        \item Phát hiện typosquatting nâng cao sử dụng Levenshtein distance kết hợp với phân tích ngữ âm (phonetic analysis)
+        \item Gắn cờ cảnh báo sớm (early warning flag) cho URL có điểm tương đồng cao với domain trong whitelist nhưng không khớp chính xác
+    \end{itemize}
+
+    \item \textbf{Lớp 5 --- Trình quét Học máy đa mô hình (Multi-model ML Scanner):}
+
+    Thay vì sử dụng một mô hình ML duy nhất, kiến trúc mới đề xuất sử dụng bốn mô hình ML chuyên biệt (specialist models), mỗi mô hình tập trung vào một khía cạnh cụ thể của URL:
+
+    \begin{itemize}
+        \item \textbf{Mô hình A --- Phân tích ký tự đặc biệt:} Chuyên phân tích sự phân bố và tần suất của ký tự đặc biệt (\texttt{@}, \texttt{-}, \texttt{.}, \texttt{/}, \texttt{\%}) ở từng thành phần URL. Mô hình này đặc biệt hiệu quả trong phát hiện URL spoofing và obfuscation.
+
+        \item \textbf{Mô hình B --- Phân tích độ dài và Entropy:} Tập trung vào phân tích chiều dài các thành phần URL và entropy Shannon. Mô hình này giỏi phát hiện domain được sinh thuật toán (DGA) và URL chứa payload mã hóa.
+
+        \item \textbf{Mô hình C --- Phân tích URL động:} Kết hợp thông tin động như tuổi domain, trạng thái chứng chỉ SSL, thông tin WHOIS, và dữ liệu DNS passive. Mô hình này bổ sung khía cạnh phân tích mà hệ thống hiện tại thiếu.
+
+        \item \textbf{Mô hình D --- Phân tích từ khóa và chỉ báo mối đe dọa:} Phân tích nhóm từ khóa đáng ngờ, gắn cờ cho các nhóm TLD nguy hiểm, phát hiện khi URL sử dụng free hosting kết hợp download parameter, và các chỉ báo mối đe dọa nâng cao khác.
+    \end{itemize}
+
+    Kết quả từ bốn mô hình chuyên biệt được tổng hợp (ensemble) thông qua phương pháp weighted averaging hoặc stacking để đưa ra quyết định phân loại cuối cùng.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=0.9cm,
+    block/.style={
+        rectangle, draw, rounded corners,
+        text width=9cm, minimum height=1cm,
+        align=center, font=\small
+    },
+    smallblock/.style={
+        rectangle, draw, rounded corners,
+        text width=4.8cm, minimum height=1cm,
+        align=center, font=\small
+    },
+    arrow/.style={-{Stealth[length=3mm]}, thick},
+    lbl/.style={font=\scriptsize\itshape, text=gray}
+]
+
+% ── Đầu vào ──
+\node[block, fill=cyan!8] (input) {\textbf{URL đầu vào} (chuỗi thô)};
+
+% ── Lớp 1 ──
+\node[block, fill=blue!10, below=of input] (L1)
+    {\textbf{Lớp 1:} Chuẩn hóa \& Giải mã hóa\\
+     {\footnotesize(Normalization \& De-obfuscation)}};
+
+% ── Lớp 2 ──
+\node[block, fill=blue!10, below=of L1] (L2)
+    {\textbf{Lớp 2:} Mở rút gọn \& Phân giải\\
+     {\footnotesize(Unshorten \& Resolve Redirects)}};
+
+% ── Lớp 3 ──
+\node[block, fill=green!15, below=of L2] (L3)
+    {\textbf{Lớp 3:} Khớp chính xác Danh sách trắng\\
+     {\footnotesize(Strict Exact-Match Whitelist)}};
+
+% ── Kết thúc sớm: benign ──
+\node[smallblock, fill=green!30, text width=3.2cm,
+      right=2cm of L3, minimum height=0.9cm] (benign)
+    {\textbf{benign}\\{\footnotesize(kết thúc sớm)}};
+
+% ── Lớp 4 ──
+\node[block, fill=orange!10, below=of L3] (L4)
+    {\textbf{Lớp 4:} Trích xuất đặc trưng \& Phát hiện Typosquatting\\
+     {\footnotesize(Feature Engineering \& Typosquatting Detection)}};
+
+% ── Lớp 5: Tiêu đề ──
+\node[block, fill=red!10, below=of L4] (L5)
+    {\textbf{Lớp 5:} Trình quét Học máy đa mô hình\\
+     {\footnotesize(Multi-model ML Scanner)}};
+
+% ── 4 mô hình con: lưới 2×2, đặt tọa độ tường minh ──
+\coordinate (gridcenter) at ([yshift=-1.8cm]L5.south);
+
+\node[smallblock, fill=purple!10]
+    (MA) at ([xshift=-2.7cm, yshift=0cm]gridcenter)
+    {\textbf{Mô hình A}\\{\footnotesize Ký tự đặc biệt}\\[-2pt]
+     {\scriptsize\texttt{@  -  .  /  \%}}};
+
+\node[smallblock, fill=purple!10]
+    (MB) at ([xshift=2.7cm, yshift=0cm]gridcenter)
+    {\textbf{Mô hình B}\\{\footnotesize Độ dài \& Entropy}\\[-2pt]
+     {\scriptsize Shannon, DGA detect}};
+
+\node[smallblock, fill=purple!10]
+    (MC) at ([xshift=-2.7cm, yshift=-2cm]gridcenter)
+    {\textbf{Mô hình C}\\{\footnotesize Phân tích URL động}\\[-2pt]
+     {\scriptsize SSL, WHOIS, DNS}};
+
+\node[smallblock, fill=purple!10]
+    (MD) at ([xshift=2.7cm, yshift=-2cm]gridcenter)
+    {\textbf{Mô hình D}\\{\footnotesize Từ khóa \& Chỉ báo}\\[-2pt]
+     {\scriptsize TLD, free-host, keywords}};
+
+% ── Ensemble ──
+\node[block, fill=red!20, text width=7cm,
+      below=3cm of gridcenter] (ensemble)
+    {\textbf{Ensemble}\\{\footnotesize(Weighted Averaging / Stacking)}};
+
+% ── Kết quả ──
+\node[block, fill=gray!12, text width=7cm,
+      below=0.8cm of ensemble] (output)
+    {\textbf{Kết quả phân loại}\\
+     {\footnotesize benign\enspace/\enspace defacement\enspace/\enspace malware\enspace/\enspace phishing}};
+
+% ════════════ Mũi tên ════════════
+
+% Luồng chính: đầu vào → L1 → L2 → L3 → L4 → L5
+\draw[arrow] (input)  -- (L1);
+\draw[arrow] (L1)     -- (L2);
+\draw[arrow] (L2)     -- (L3);
+\draw[arrow] (L3)     -- (L4) node[midway, right, lbl] {không khớp};
+\draw[arrow] (L4)     -- (L5);
+
+% Nhánh benign
+\draw[arrow] (L3.east) -- (benign.west) node[midway, above, lbl] {khớp};
+
+% L5 → 4 mô hình con (fan-out)
+\draw[arrow] (L5.south) -- ++(0,-0.55) -| (MA.north);
+\draw[arrow] (L5.south) -- ++(0,-0.55) -| (MB.north);
+
+\draw[arrow] (MA.south) -- (MC.north);
+\draw[arrow] (MB.south) -- (MD.north);
+
+% 4 mô hình con → ensemble (fan-in)
+\draw[arrow] (MC.south) -- ++(0,-0.35) -| ([xshift=-1cm]ensemble.north);
+\draw[arrow] (MD.south) -- ++(0,-0.35) -| ([xshift=1cm]ensemble.north);
+
+% Ensemble → output
+\draw[arrow] (ensemble) -- (output);
+
+% ════════════ Đường viền nhóm quanh 4 mô hình ════════════
+\begin{scope}[on background layer]
+\node[draw=purple!40, dashed, rounded corners=6pt,
+      fill=purple!3, inner sep=10pt,
+      fit=(MA)(MB)(MC)(MD),
+      label={[font=\footnotesize\itshape, text=purple!60]above:Bốn mô hình chuyên biệt}] {};
+\end{scope}
+
+\end{tikzpicture}
+}% end resizebox
+\caption{Kiến trúc pipeline 5 lớp đề xuất cho phiên bản nâng cấp.}
+\label{fig:proposed_pipeline}
+\end{figure}
+
+\subsection{Các hướng phát triển khác}
+
+Ngoài kiến trúc 5 lớp đề xuất ở trên, các hướng phát triển bổ sung bao gồm:
+
+\begin{enumerate}
+    \item \textbf{Tối ưu hóa siêu tham số.} Sử dụng tối ưu hóa Bayesian (ví dụ: Optuna) hoặc random search để tìm kiếm hệ thống các siêu tham số tối ưu cho LightGBM, có thể cải thiện thêm hiệu suất phân loại.
+
+    \item \textbf{Phương pháp ensemble.} Kết hợp LightGBM với các bộ phân loại bổ sung như XGBoost hoặc Random Forest thông qua weighted averaging hoặc stacking để tăng tính bền vững (robustness).
+
+    \item \textbf{Tăng cường đặc trưng.} Tích hợp tuổi đăng ký WHOIS, thuộc tính chứng chỉ SSL, và metadata DNS passive có thể nâng cao khả năng phân biệt, dù phải chấp nhận tăng độ trễ suy luận.
+
+    \item \textbf{Ngưỡng quyết định động.} Điều chỉnh ranh giới quyết định phân loại dựa trên tín hiệu ngữ cảnh (ví dụ: nguồn gốc địa lý, thời gian trong ngày) có thể cải thiện precision trong các kịch bản triển khai cụ thể.
+
+    \item \textbf{Nâng cấp phân tích URL động.} Bổ sung khả năng phân tích hoạt động của URL như nội dung trang web, ngày tạo domain, trạng thái hosting, và hành vi redirect.
+
+    \item \textbf{Công cụ tự động làm giàu dataset.} Phát triển các tool tự động cập nhật và bổ sung dữ liệu mới từ các nguồn tình báo mối đe dọa (URLhaus, PhishTank, OpenPhish) theo lịch trình định kỳ (ví dụ: mỗi tuần một lần), giúp mô hình luôn cập nhật với các mẫu URL độc hại mới nhất và giảm thiểu concept drift.
+
+    \item \textbf{Triển khai sản phẩm.} Tích hợp vào REST API hoặc tiện ích mở rộng trình duyệt (browser extension) để cho phép sàng lọc URL thời gian thực cho người dùng cuối.
+\end{enumerate}
+
+% ==============================================================
+% Tài Liệu Tham Khảo
+% ==============================================================
+\newpage
+\begin{thebibliography}{99}
+
+\bibitem{rfc3986}
+Berners-Lee, T., Fielding, R., \& Masinter, L. (2005).
+\textit{Uniform Resource Identifier (URI): Generic Syntax}.
+RFC~3986, Internet Engineering Task Force (IETF).
+\url{https://www.rfc-editor.org/rfc/rfc3986.html}
+
+\bibitem{deeplearning_phishing}
+Tác giả (2024).
+\textit{Deep Learning-Based Detection of Phishing URLs Using URL Structure and Character-Level Features}.
+ResearchGate.
+\url{https://www.researchgate.net/publication/400715013}
+
+\bibitem{lightgbm}
+Ke, G., Meng, Q., Finley, T., Wang, T., Chen, W., Ma, W., Ye, Q., \& Liu, T.-Y. (2017).
+\textit{LightGBM: A Highly Efficient Gradient Boosting Decision Tree}.
+Advances in Neural Information Processing Systems~30 (NeurIPS), 3149--3157.
+\url{https://lightgbm.readthedocs.io/en/stable/}
+
+\bibitem{sklearn}
+Pedregosa, F., Varoquaux, G., Gramfort, A., Michel, V., Thirion, B., Grisel, O., \ldots \& Duchesnay, \'E. (2011).
+Scikit-learn: Machine Learning in Python.
+\textit{Journal of Machine Learning Research}, 12, 2825--2830.
+\url{https://scikit-learn.org/stable/user_guide.html}
+
+\bibitem{shannon}
+Shannon, C.~E. (1948).
+A Mathematical Theory of Communication.
+\textit{Bell System Technical Journal}, 27(3), 379--423.
+\url{https://people.math.harvard.edu/~ctm/home/text/others/shannon/entropy/entropy.pdf}
+
+\bibitem{tldextract}
+Kurkowski, J.
+\textit{tldextract --- Accurately separate the TLD from the registered domain and subdomains of a URL}.
+\url{https://github.com/john-googling/tldextract}
+
+\bibitem{rapidfuzz}
+Bachmann, M.
+\textit{RapidFuzz --- Rapid fuzzy string matching in Python and C++}.
+\url{https://github.com/maxbachmann/RapidFuzz}
+
+\bibitem{urlhaus}
+abuse.ch.
+\textit{URLhaus --- Malware URL exchange}.
+\url{https://urlhaus.abuse.ch/}
+
+\bibitem{levenshtein}
+Levenshtein, V.~I. (1966).
+Binary codes capable of correcting deletions, insertions, and reversals.
+\textit{Soviet Physics Doklady}, 10(8), 707--710.
+
+\bibitem{friedman}
+Friedman, J.~H. (2001).
+Greedy Function Approximation: A Gradient Boosting Machine.
+\textit{Annals of Statistics}, 29(5), 1189--1232.
+
+\bibitem{shap}
+Lundberg, S.~M., \& Lee, S.-I. (2017).
+A Unified Approach to Interpreting Model Predictions.
+Advances in Neural Information Processing Systems~30 (NeurIPS), 4765--4774.
+
+\end{thebibliography}
+
+\end{document}
