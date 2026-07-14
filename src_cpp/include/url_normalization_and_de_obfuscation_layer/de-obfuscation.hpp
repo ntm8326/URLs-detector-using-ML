@@ -1,0 +1,8 @@
+//
+// Created by AD on 7/14/2026.
+//
+
+#ifndef URLS_BASE_DE_OBFUSCATION_HPP
+#define URLS_BASE_DE_OBFUSCATION_HPP
+
+#endif //URLS_BASE_DE_OBFUSCATION_HPP
