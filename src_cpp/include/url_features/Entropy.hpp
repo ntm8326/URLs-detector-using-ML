@@ -1,8 +1,13 @@
 //
 // Created by AD on 7/14/2026.
 //
+#ifndef ENTROPY_HPP
+#define ENTROPY_HPP
 
-#ifndef URLS_BASE_ENTROPY_HPP
-#define URLS_BASE_ENTROPY_HPP
+#include <string>
 
-#endif //URLS_BASE_ENTROPY_HPP
+namespace  Entropy {
+    auto Shannon_entropy(const std::string& text) -> double;
+}
+
+#endif //ENTROPY_HPP

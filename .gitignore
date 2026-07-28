@@ -1,4 +1,4 @@
-
+# === Data ===
 *.csv
 *.tsv
 *.xlsx
@@ -6,24 +6,49 @@
 src/data/
 datasets/
 
-
+# === Model artifacts ===
 *.pkl
 *.h5
 *.pt
 *.pth
 models/
 
-
+# === Python ===
 .env
 venv/
 env/
+.venv/
 .virtualenv/
-
-
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
 .ipynb_checkpoints/
 .pytest_cache/
 
+# === C++ build artifacts ===
+build/
+cmake-build-*/
+*.o
+*.obj
+*.exe
+*.out
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+
+# === CMake generated ===
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# === IDE ===
+.idea/
+.vscode/
+
+# === OS ===
 .DS_Store
 Thumbs.db
