@@ -1,19 +1,22 @@
-#include "Entropy.hpp"
+#include "url_features/Entropy.hpp"
+#include <string>
+#include <cmath>
 
-float Shannon_entropy(std::string text) {
-    int n = text.length();
+auto Entropy::Shannon_entropy(const std::string &text) -> double {
+    const size_t n = text.length();
+    if (n == 0) return 0;
+
     int freq[256] = {0};
-    for (char i : text) {
-        ++freq[i];
+    for (char c : text) {
+        ++freq[static_cast<unsigned char>(c)];
     }
-    float c = 0;
-    float entropy = 0.0;
+
+    double c_sum {0};
     for (int i = 0; i < 256; i++) {
         if (freq[i] > 0) {
-            int a = freq[i];
-            c += a*log2(a);
+            int a {freq[i]};
+            c_sum += a * log2(a);
         }
     }
-    entropy = log2(n) - c/n;
-    return entropy;
+    return log2(static_cast<double>(n)) - c_sum / n;
 }
