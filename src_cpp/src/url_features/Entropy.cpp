@@ -20,3 +20,8 @@ auto Entropy::Shannon_entropy(const std::string &text) -> double {
     }
     return log2(static_cast<double>(n)) - c_sum / n;
 }
+
+auto Entropy::len(const std::string &text) -> size_t {
+    return text.length();
+}
+
