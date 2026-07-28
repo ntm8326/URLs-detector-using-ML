@@ -8,6 +8,7 @@
 
 namespace  Entropy {
     auto Shannon_entropy(const std::string& text) -> double;
+    auto len(const std::string& text) -> size_t;
 }
 
 #endif //ENTROPY_HPP
