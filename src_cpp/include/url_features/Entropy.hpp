@@ -4,11 +4,11 @@
 #ifndef ENTROPY_HPP
 #define ENTROPY_HPP
 
-#include <string>
+#include <string_view>
 
 namespace  Entropy {
-    auto Shannon_entropy(const std::string& text) -> double;
-    auto len(const std::string& text) -> size_t;
+    auto Shannon_entropy(std::string_view text) -> double;
+    auto len(std::string_view text) -> size_t;
 }
 
 #endif //ENTROPY_HPP
