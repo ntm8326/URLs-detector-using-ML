@@ -6,3 +6,6 @@ rapidfuzz
 lightgbm
 numpy
 matplotlib
+joblib
+shap
+torch
