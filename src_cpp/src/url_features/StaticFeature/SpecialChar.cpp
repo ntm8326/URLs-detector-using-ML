@@ -3,7 +3,7 @@
 //
 #include <string_view>
 #include <array>
-#include "url_features/SpecialChar.hpp"
+#include "url_features/StaticFeatures/SpecialChar.hpp"
 #include "data_container/CharIndex.hpp"
 #include "data_container/ExtractedPart.hpp"
 
@@ -12,7 +12,7 @@ auto SpecialChar::valid_char_count(std::string_view part) -> std::array<size_t, 
     if (part.empty()) return result;
 
     size_t freq[256] = {0};
-    for (char c : part) {
+    for (const char c : part) {
         ++freq[static_cast<unsigned char>(c)];
     }
     result[static_cast<size_t>(UrlData::CharIndex::dot)] = freq['.'];
@@ -30,7 +30,7 @@ auto SpecialChar::valid_char_count(std::string_view part) -> std::array<size_t, 
 auto SpecialChar::dot_count(std::string_view part) -> int {
     if (part.empty()) return 0;
     int count {0};
-    for (char c : part) {
+    for (const char c : part) {
         if (c == '.') {
             count++;
         }
@@ -40,7 +40,7 @@ auto SpecialChar::dot_count(std::string_view part) -> int {
 auto SpecialChar::hyphen_count(std::string_view part) -> int {
     if (part.empty()) return 0;
     int count {0};
-    for (char c : part) {
+    for (const char c : part) {
         if (c == '-') {
             count++;
         }
@@ -50,7 +50,7 @@ auto SpecialChar::hyphen_count(std::string_view part) -> int {
 auto SpecialChar::hash_count(std::string_view part) -> int {
     if (part.empty()) return 0;
     int count {0};
-    for (char c : part) {
+    for (const char c : part) {
         if (c == '#') {
             count++;
         }
@@ -60,7 +60,7 @@ auto SpecialChar::hash_count(std::string_view part) -> int {
 auto SpecialChar::percent_count(std::string_view part) -> int {
     if (part.empty()) return 0;
     int count {0};
-    for (char c : part) {
+    for (const char c : part) {
         if (c == '%') {
             count++;
         }
@@ -70,7 +70,7 @@ auto SpecialChar::percent_count(std::string_view part) -> int {
 auto SpecialChar::ampersand_count(std::string_view part) -> int {
     if (part.empty()) return 0;
     int count {0};
-    for (char c : part) {
+    for (const char c : part) {
         if (c == '&') {
             count++;
         }
@@ -80,7 +80,7 @@ auto SpecialChar::ampersand_count(std::string_view part) -> int {
 auto SpecialChar::slash_count(std::string_view part) -> int {
     if (part.empty()) return 0;
     int count {0};
-    for (char c : part) {
+    for (const char c : part) {
         if (c == '/') {
             count++;
         }
@@ -90,7 +90,7 @@ auto SpecialChar::slash_count(std::string_view part) -> int {
 auto SpecialChar::at_sign_count(std::string_view part) -> int {
     if (part.empty()) return 0;
     int count {0};
-    for (char c : part) {
+    for (const char c : part) {
         if (c == '@') {
             count++;
         }
@@ -100,7 +100,7 @@ auto SpecialChar::at_sign_count(std::string_view part) -> int {
 auto SpecialChar::equal_count(std::string_view part) -> int {
     if (part.empty()) return 0;
     int count {0};
-    for (char c : part) {
+    for (const char c : part) {
         if (c == '=') {
             count++;
         }
@@ -110,7 +110,7 @@ auto SpecialChar::equal_count(std::string_view part) -> int {
 auto SpecialChar::question_count(std::string_view part) -> int {
     if (part.empty()) return 0;
     int count {0};
-    for (char c : part) {
+    for (const char c : part) {
         if (c == '?') {
             count++;
         }

@@ -7,7 +7,7 @@
 #include <string>
 #include <numeric>
 #include <algorithm>
-#include "url_features/SpecialChar.hpp"
+#include "url_features/StaticFeatures/SpecialChar.hpp"
 #include "data_container/CharIndex.hpp"
 int main() {
     int n;
@@ -40,7 +40,7 @@ int main() {
         auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>( end - start);
         times.push_back(elapsed.count());
     }
-    double avg = std::accumulate(times.begin(), times.end(), 0.0) / n;
+    const double avg = std::accumulate(times.begin(), times.end(), 0.0) / n;
 
     auto [minRT, maxRT] = std::minmax_element(times.begin(), times.end());
 

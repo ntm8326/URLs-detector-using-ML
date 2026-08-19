@@ -6,7 +6,7 @@
 #include <iostream>
 #include <cassert>
 #include <cmath>
-#include "url_features/Entropy.hpp"
+#include "url_features/StaticFeatures/Entropy.hpp"
 #include <chrono>
 #include <vector>
 #include <numeric>
@@ -33,7 +33,7 @@ int main() {
         auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>( end - start);
         times.push_back(elapsed.count());
     }
-    double avg = std::accumulate(times.begin(), times.end(), 0.0) / n;
+    const double avg = std::accumulate(times.begin(), times.end(), 0.0) / n;
 
     auto [minRT, maxRT] = std::minmax_element(times.begin(), times.end());
 

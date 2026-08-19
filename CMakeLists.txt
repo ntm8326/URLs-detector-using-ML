@@ -5,17 +5,23 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 SET(CMAKE_CXX_EXTENSIONS OFF)
 
-#fetch google test
+#fetch google test + ada url
 include(FetchContent)
 FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
         GIT_TAG        v1.17.0
 )
+FetchContent_Declare(
+        ada
+        GIT_REPOSITORY https://github.com/ada-url/ada.git
+        GIT_TAG        v4.0.0
+)
 
 # tránh override cài đặt compiler/linker trên Windows
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
+FetchContent_MakeAvailable(ada)
 
 #add subdir which contains C++ file
 add_subdirectory(src_cpp)

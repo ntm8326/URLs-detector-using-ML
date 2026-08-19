@@ -2,7 +2,7 @@
 // Created by AD on 7/30/2026.
 //
 #include <gtest/gtest.h>
-#include "url_features/SpecialChar.hpp"
+#include "url_features/StaticFeatures/SpecialChar.hpp"
 TEST(DotCountTest, RealURL_NumberOfDot) {
     EXPECT_EQ(SpecialChar::dot_count("https://87khq5gx.ravabetensani.site/?ublib=ca0a10e1-15b1-489c-a27f-7703d460170c"), 2);
 }

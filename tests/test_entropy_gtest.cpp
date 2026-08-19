@@ -3,7 +3,7 @@
 //
 
 #include <gtest/gtest.h>
-#include "url_features/Entropy.hpp"
+#include "url_features/StaticFeatures/Entropy.hpp"
 
 TEST(EntropyTest, EmptyString_ReturnsZero) {
     EXPECT_DOUBLE_EQ(Entropy::Shannon_entropy(""), 0.0);
